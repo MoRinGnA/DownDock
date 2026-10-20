@@ -1,14 +1,19 @@
-//! DownDock — 작업표시줄을 대체하는 하단 독.
+//! DownDock — Windows 작업표시줄과 공존하는 오른쪽 세로 Dock.
 //!
-//! 창·작업 영역·커서 감지는 win.rs, 시작 메뉴 열거와 실행은 apps.rs,
-//! 고정 목록은 config.rs가 맡는다. 이 파일은 그 셋을 이어 주는 배선만 한다.
+//! 창 배치와 실행 중인 창 감지는 win.rs, 시작 메뉴 열거와 실행은 apps.rs,
+//! 고정 목록은 config.rs, 접힌 레일의 시스템 정보는 status.rs가 맡는다.
+//! 이 파일은 그것들을 이어 주는 배선만 한다.
 
 mod apps;
+mod backdrop;
 mod config;
+mod power;
+mod shortcut;
+mod status;
+mod tray;
 mod win;
 
 use tauri::Manager;
-use win::DOCK_RESERVE_LOGICAL;
 
 fn tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
@@ -36,14 +41,31 @@ pub fn run() {
     win::enable_per_monitor_dpi();
 
     let app = tauri::Builder::default()
+        .plugin(shortcut::plugin())
+        .manage(backdrop::Backdrop::new())
         .invoke_handler(tauri::generate_handler![
             apps::list_apps,
             apps::launch_app,
+            config::get_config,
             config::get_pinned,
             config::set_pinned,
+            config::set_shape,
+            config::set_side,
+            config::set_vertical,
+            config::set_rail_height,
+            config::set_theme,
+            power::power_action,
+            shortcut::set_shortcut,
+            status::system_status,
             win::resize_dock,
             win::list_running_windows,
-            win::focus_window
+            tray::list_tray_apps,
+            win::focus_window,
+            win::capture_backdrop,
+            win::capture_window,
+            backdrop::set_backdrop_region,
+            backdrop::backdrop_frame,
+            backdrop::backdrop_alive
         ])
         .setup(|app| {
             let window = app
@@ -51,16 +73,17 @@ pub fn run() {
                 .ok_or("메인 창을 찾을 수 없습니다")?;
 
             win::decorate(&window)?;
-            win::position_dock(&window)?;
+            win::exclude_from_capture(&window)?;
+            // 저장된 가장자리·세로 위치에서 시작한다. 설정이 깨졌으면 기본값으로 둔다.
+            let (side, vertical) = config::Config::load()
+                .map(|c| (c.side, c.vertical))
+                .unwrap_or_else(|_| ("left".into(), "bottom".into()));
+            win::position_dock(&window, &side, &vertical, 0.0)?;
 
-            if config::Config::load().reserve_work_area {
-                if let Some(monitor) = window.current_monitor().ok().flatten() {
-                    let scale = monitor.scale_factor();
-                    win::reserve_work_area((DOCK_RESERVE_LOGICAL * scale) as i32);
-                }
-            }
-
-            win::start_topmost_keeper(app.handle().clone());
+            win::start_window_monitor(app.handle().clone());
+            status::start_watch(app.handle().clone());
+            app.state::<backdrop::Backdrop>().start();
+            shortcut::register_saved(app.handle());
             tray(app)?;
             window.show()?;
             Ok(())
@@ -75,9 +98,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("DownDock를 시작할 수 없습니다");
 
-    app.run(|_handle, event| {
-        if let tauri::RunEvent::Exit = event {
-            win::restore_work_area();
-        }
-    });
+    app.run(|_handle, _event| {});
 }
+
+

@@ -1,166 +1,1381 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans: "Pretendard", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+@property --angle-2 {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: -45deg;
 }
 
+/* ===== floating-glass palette ===== */
 :root {
-  color-scheme: dark;
+  color-scheme: dark light;
+  /* 금속 유리 버튼이 쓰는 전환 값. */
+  --anim--hover-time: 400ms;
+  --anim--hover-ease: cubic-bezier(0.25, 1, 0.5, 1);
+  --dock-bg-dark: rgba(18, 23, 32, 0.7);
+  --dock-bg-light: rgba(248, 251, 255, 0.36);
+  --dock-surface-dark:
+    radial-gradient(110% 70% at 100% 0%, rgba(118, 170, 255, 0.13), transparent 68%),
+    linear-gradient(100deg, rgba(12, 16, 24, 0.5), rgba(25, 32, 45, 0.4));
+  --dock-surface-light:
+    radial-gradient(110% 70% at 100% 0%, rgba(93, 155, 236, 0.1), transparent 68%),
+    linear-gradient(115deg, rgba(255, 255, 255, 0.46), rgba(232, 240, 252, 0.2) 55%, rgba(255, 255, 255, 0.36));
+  --dock-surface: var(--dock-surface-dark);
+  --dock-tint-dark: rgba(255, 255, 255, 0.085);
+  --dock-tint-light: rgba(255, 255, 255, 0.72);
+  /* 유리 재질: 레퍼런스(liquid glass)의 색·반사 구조를 그대로 따른다.
+     --glass-reflex-light/dark 가 빛 반사와 그림자 세기를 테마별로 조절한다. */
+  --c-glass: #bbbbbc;
+  --c-light: #fff;
+  --c-dark: #000;
+  /* 레퍼런스(liquid glass)의 다크 굴절값: 빛 반사는 약하게, 안쪽 그림자는 두 배로. */
+  --glass-reflex-light: 0.3;
+  --glass-reflex-dark: 2;
+  /* 레퍼런스와 같은 틴트: 유리색을 12% 섞는다 */
+  --glass-tint-light: color-mix(in srgb, var(--c-glass) 12%, transparent);
+  --glass-tint-dark: color-mix(in srgb, var(--c-glass) 12%, transparent);
+  --glass-tint: var(--glass-tint-dark);
+  --border-dark: rgba(255, 255, 255, 0.2);
+  --border-light: rgba(31, 49, 75, 0.12);
+  --accent-blue: #8fc5ff;
+  --accent-blue-strong: #48a3ff;
+  --accent-violet: #c3a2ff;
+  --dock-shadow-dark: 0 16px 42px -16px rgba(0, 0, 0, 0.62), 0 4px 12px rgba(0, 0, 0, 0.24);
+  --dock-shadow-light: 0 16px 42px -16px rgba(19, 34, 57, 0.24), 0 4px 12px rgba(19, 34, 57, 0.1);
+  --panel-shadow-dark: 0 24px 64px -20px rgba(0, 0, 0, 0.62), 0 8px 24px rgba(0, 0, 0, 0.24);
+  --panel-shadow-light: 0 24px 64px -20px rgba(28, 48, 76, 0.22), 0 8px 24px rgba(28, 48, 76, 0.1);
+  --dock-shadow: var(--dock-shadow-dark);
+  --panel-shadow: var(--panel-shadow-dark);
+  --border: var(--border-dark);
+  --text-primary: #f4f7ff;
+  --text-muted: rgba(229, 236, 249, 0.64);
+  --dot-light: var(--accent-blue);
+  --dot-glow: rgba(72, 163, 255, 0.72);
+  /* 접힌 레일은 색을 쓰지 않는다. 같은 잉크의 밝기 차이로만 상태를 구분한다. */
+  --rail-ink: #eef3fa;
+  --rail-ink-soft: rgba(238, 243, 250, 0.16);
+}
+
+/* 테마: App이 document.documentElement.dataset.theme을 실제 적용 테마(light|dark)로 맞춘다. */
+:root[data-theme="light"] {
+  & {
+    --dock-bg: var(--dock-bg-light);
+    --dock-surface: var(--dock-surface-light);
+    --dock-tint: var(--dock-tint-light);
+    --glass-tint: var(--glass-tint-light);
+    --glass-reflex-light: 1;
+    --glass-reflex-dark: 1;
+    --dock-shadow: var(--dock-shadow-light);
+    --panel-shadow: var(--panel-shadow-light);
+    --border: var(--border-light);
+    --text-primary: #19283b;
+    --text-muted: rgba(25, 40, 59, 0.62);
+    --dot-light: #247de0;
+    --dot-glow: rgba(36, 125, 224, 0.35);
+    --rail-ink: #1c2939;
+    --rail-ink-soft: rgba(28, 41, 57, 0.16);
+  }
 }
 
 body {
   margin: 0;
-  font-family: var(--font-sans);
+  font-family: var(--font-sans, "Pretendard", "Segoe UI", system-ui, sans-serif);
   background: transparent;
   overflow: hidden;
 }
 
-/* ---------- 독 본체 ----------
-   유리는 세 가지로 완성된다.
-   1) 배경을 투명하게 두고 뒤쪽을 강하게 블러(배경이 실제로 비친다)
-   2) 1px 림: 위쪽은 밝게, 아래쪽은 옅게 — 빛이 유리 가장자리에 걸리는 느낌
-   3) 그림자는 얕고 부드럽게. 검은 테두리를 두르면 유리가 아니라 구멍이 된다. */
+/* ===== 각진(사각) 유리 =====
+   data-shape="facet"이면 유리 판 자체만 반듯한 사각으로 그린다.
+   안쪽 컨트롤은 둥근 모서리를 유지한다: 판과 타일을 모두 각지게 하면
+   아이콘 색면이 평평한 사각형으로 죽고, 유리 인디케이터는 빛을 받는
+   곡면이 사라져 회색 슬래브처럼 보인다(실측 비교).
+   링·광택 레이어는 border-radius: inherit을 쓰므로 자동으로 따라온다. */
+:root[data-shape="facet"] .dock-shell,
+:root[data-shape="facet"] .launcher-panel {
+  border-radius: 0;
+}
 
+/* ===== 금속 유리 버튼 =====
+   conic 그라디언트 링 + mask-composite 녹아웃 + screen 블렌드 광택 + 누를 때 3D 틸트.
+   크기는 em으로 두어 버튼마다 font-size만 정하면 같은 비율로 늘어난다.
+   backdrop-filter는 쓰지 않는다: 이 버튼들은 이미 실시간 굴절 캔버스 위에 있고,
+   독 타일 14개에 걸면 배경이 바뀔 때마다 필터가 다시 돌아 프레임을 잡아먹는다. */
+.glass-btn {
+  --border-width: clamp(1px, 0.0625em, 4px);
+  position: relative;
+  isolation: isolate;
+  border: 0;
+  cursor: pointer;
+  /* 좌우 끝을 어둡게 두는 대각 그라디언트는 버튼 옆면이 검은 조각처럼 보였다.
+     채움은 위→아래로만 변화를 주고, 대각 광택은 ::before가 맡는다. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0.15));
+  box-shadow:
+    inset 0 0.125em 0.125em rgba(0, 0, 0, 0.05),
+    inset 0 -0.125em 0.125em rgba(255, 255, 255, 0.5),
+    0 0.25em 0.125em -0.125em rgba(0, 0, 0, 0.2),
+    inset 0 0 0.1em 0.25em rgba(255, 255, 255, 0.2);
+  transition:
+    transform var(--anim--hover-time) var(--anim--hover-ease),
+    box-shadow var(--anim--hover-time) var(--anim--hover-ease),
+    background var(--anim--hover-time) var(--anim--hover-ease);
+}
+
+/* 링: 테두리 폭만 남기고 안쪽을 녹아웃해 도넛 모양으로 만든다. */
+.glass-btn::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: calc(var(--border-width) / -2);
+  border-radius: inherit;
+  padding: var(--border-width);
+  box-sizing: border-box;
+  pointer-events: none;
+  /* 위는 빛을 받고 아래로 갈수록 어두워지는 연속 베벨.
+     conic-gradient의 각도 0/50/100% 지점에 박히던 검은 호가 버튼 좌우에
+     쐐기 조각처럼 보여서, 폭이 넓은 선형 그라디언트로 바꿨다. */
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.9) 0%,
+    rgba(255, 255, 255, 0.3) 26%,
+    rgba(255, 255, 255, 0.06) 50%,
+    rgba(0, 0, 0, 0.14) 78%,
+    rgba(0, 0, 0, 0.26) 100%
+  );
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  box-shadow: inset 0 0 0 calc(var(--border-width) / 2) rgba(255, 255, 255, 0.5);
+  /* 링은 호버·클릭에도 돌지 않는다. 각도는 -75deg에 고정. */
+}
+
+/* 광택: 밝은 띠가 표면을 훑고 지나간다. */
+.glass-btn::before {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset: calc(var(--border-width) / 2);
+  border-radius: inherit;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background: linear-gradient(
+    var(--angle-2),
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.5) 40% 50%,
+    rgba(255, 255, 255, 0) 55%
+  );
+  background-size: 200% 200%;
+  background-position: 0% 50%;
+  background-repeat: no-repeat;
+  transition:
+    background-position calc(var(--anim--hover-time) * 1.25) var(--anim--hover-ease),
+    --angle-2 calc(var(--anim--hover-time) * 1.25) var(--anim--hover-ease);
+}
+
+.glass-btn:hover {
+  transform: scale(0.975);
+  box-shadow:
+    inset 0 0.125em 0.125em rgba(0, 0, 0, 0.05),
+    inset 0 -0.125em 0.125em rgba(255, 255, 255, 0.5),
+    0 0.15em 0.05em -0.1em rgba(0, 0, 0, 0.25),
+    inset 0 0 0.05em 0.1em rgba(255, 255, 255, 0.5);
+}
+
+.glass-btn:hover::before {
+  background-position: 25% 50%;
+}
+
+/* 누르면 앞으로 기울며 눌린다. 기울기를 보려면 부모에 perspective가 있어야 한다. */
+.glass-btn:active {
+  transform: scale(0.975) rotate3d(1, 0, 0, 25deg);
+  box-shadow:
+    inset 0 0.125em 0.125em rgba(0, 0, 0, 0.05),
+    inset 0 -0.125em 0.125em rgba(255, 255, 255, 0.5),
+    0 0.125em 0.125em -0.125em rgba(0, 0, 0, 0.2),
+    inset 0 0 0.1em 0.25em rgba(255, 255, 255, 0.2),
+    0 0.225em 0.05em 0 rgba(0, 0, 0, 0.05),
+    inset 0 0.25em 0.05em 0 rgba(0, 0, 0, 0.15);
+}
+
+.glass-btn:active::before {
+  background-position: 50% 15%;
+  --angle-2: -15deg;
+}
+
+/* 링·광택보다 위에 서야 하는 내용물(아이콘·글자). */
+.glass-btn > .glass-btn-label,
+.glass-btn > svg,
+.glass-btn > img {
+  position: relative;
+  z-index: 2;
+}
+
+.glass-btn-label {
+  letter-spacing: -0.05em;
+  font-weight: 500;
+  text-shadow: 0 0.25em 0.05em rgba(0, 0, 0, 0.1);
+  transition: text-shadow var(--anim--hover-time) var(--anim--hover-ease);
+}
+
+.glass-btn:hover > .glass-btn-label {
+  text-shadow: 0.025em 0.025em 0.025em rgba(0, 0, 0, 0.12);
+}
+
+.glass-btn:active > .glass-btn-label {
+  text-shadow: 0.025em 0.25em 0.05em rgba(0, 0, 0, 0.12);
+}
+
+/* 누를 때 기울기가 보이도록 버튼을 담는 줄에 원근을 준다. */
+.dock-items,
+.launcher-search,
+.launcher-power-row,
+.settings-header,
+.settings-pin,
+.settings-shortcut {
+  perspective: 800px;
+}
+
+:root[data-theme="light"] .glass-btn {
+  /* 밝은 패널 위에서는 흰 채움을 줄여야 버튼이 카드처럼 떠 보이지 않는다. */
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.4));
+  box-shadow:
+    inset 0 0.125em 0.125em rgba(31, 49, 75, 0.06),
+    inset 0 -0.125em 0.125em rgba(255, 255, 255, 0.7),
+    0 0.25em 0.125em -0.125em rgba(31, 49, 75, 0.14),
+    inset 0 0 0.1em 0.25em rgba(255, 255, 255, 0.35);
+}
+
+:root[data-theme="light"] .glass-btn::after {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.5) 26%,
+    rgba(45, 75, 112, 0.06) 50%,
+    rgba(45, 75, 112, 0.16) 78%,
+    rgba(45, 75, 112, 0.24) 100%
+  );
+  box-shadow: inset 0 0 0 calc(var(--border-width) / 2) rgba(255, 255, 255, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glass-btn,
+  .glass-btn::before,
+  .glass-btn::after {
+    transition: none;
+  }
+}
+
+/* ---------- edge dock / floating glass rail ---------- */
 .dock-shell {
   position: relative;
   display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  padding: 6px 8px;
-  border-radius: 28px;
-  background: rgba(255, 255, 255, 0.07);
-  backdrop-filter: blur(40px) saturate(190%) brightness(1.05);
-  -webkit-backdrop-filter: blur(40px) saturate(190%) brightness(1.05);
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  align-items: center;
+  gap: 0;
+  padding: 12px 6px;
+  /* 흰 테두리 선은 쓰지 않는다. 표면의 명암은 굴절 캔버스와 ::after 그림자만 만든다. */
+  border: none;
+  border-radius: 24px;
+  /* 화면 가장자리에 끼우지 않고 띄우는 카드·캡슐. 색 그라데이션 없이 중성 유리 한 겹. */
+  background: rgba(13, 18, 26, 0.74);
+  backdrop-filter: var(--glass-base, blur(34px) saturate(150%));
+  -webkit-backdrop-filter: var(--glass-base, blur(34px) saturate(150%));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.14),
-    inset 0 0 24px rgba(255, 255, 255, 0.06),
-    0 10px 28px -8px rgba(0, 0, 0, 0.35),
-    0 2px 6px -2px rgba(0, 0, 0, 0.25);
+    0 18px 44px -20px rgba(0, 0, 0, 0.7),
+    0 4px 14px -8px rgba(0, 0, 0, 0.45);
+  min-width: 0;
 }
 
-/* 유리 표면에 얹히는 미세한 반점 — 재질감만 준다 */
-.dock-shell::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(#fff 1px, transparent 1px);
-  background-size: 3px 3px;
-  opacity: 0.025;
-  mix-blend-mode: overlay;
+.dock-shell-vertical {
+  flex-direction: column;
+  width: 66px;
+  flex-shrink: 0;
+  /* 폭은 즉시 바뀌고(창 크기가 따라와야 한다), 내용물만 부드럽게 나타난다. */
+  transition: border-radius 160ms var(--anim--hover-ease);
+}
+
+/* 접힌 레일: 화면 아래에 뜨는 23px 캡슐. 높이는 내용물이 정한다.
+   빈 공간을 만들지 않으려고 표면이 창 목록·미디어·배터리에 딱 맞춰 줄어든다.
+   표면은 레퍼런스 스위처와 같은 적층 유리: 유리색 12% 틴트 위에 안쪽 하이라이트와
+   안쪽 그림자를 여러 겹 얹어 두께를 만든다. */
+/* 설정 패널 옆에 설 때는 레일이 패널 높이에 맞춰 늘어난다. 두 표면의 위아래 선이
+   같아져 한 덩이로 읽힌다(높이를 따로 계산하지 않고 flex의 늘림에 맡긴다). */
+.dock-shell-beside-panel {
+  align-self: stretch;
+}
+
+.dock-shell-vertical.dock-shell-collapsed {
+  width: 23px;
+  border-radius: 12px;
+  padding: 0;
+  cursor: pointer;
+  background-color: color-mix(in srgb, var(--c-glass) 12%, transparent);
+  backdrop-filter: var(--glass-base, blur(8px) saturate(150%));
+  -webkit-backdrop-filter: var(--glass-base, blur(8px) saturate(150%));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 10%), transparent),
+    inset 1.8px 3px 0 -2px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 90%), transparent),
+    inset -2px -2px 0 -2px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 80%), transparent),
+    inset -3px -8px 1px -6px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 60%), transparent),
+    inset -0.3px -1px 4px 0 color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 12%), transparent),
+    inset -1.5px 2.5px 0 -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+    inset 0 3px 4px -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+    inset 2px -6.5px 1px -4px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent),
+    0 16px 36px -18px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 34%), transparent),
+    0 2px 10px -6px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 25%), transparent);
+}
+
+/* 라이트 테마: 흰 유리 위에서는 하이라이트를 더 세게, 그림자는 회청색으로 바꿔 같은 결을 만든다. */
+:root[data-theme="light"] .dock-shell-vertical.dock-shell-collapsed {
+  /* 라이트 유리는 반사를 세게, 그림자는 옅게. 레퍼런스의 light 값(1/1)을 쓴다. */
+  --glass-reflex-light: 1;
+  --glass-reflex-dark: 1;
+  background-color: color-mix(in srgb, var(--c-glass) 12%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--c-light) 10%, transparent),
+    inset 1.8px 3px 0 -2px color-mix(in srgb, var(--c-light) 90%, transparent),
+    inset -2px -2px 0 -2px color-mix(in srgb, var(--c-light) 80%, transparent),
+    inset -3px -8px 1px -6px color-mix(in srgb, var(--c-light) 60%, transparent),
+    inset -0.3px -1px 4px 0 color-mix(in srgb, var(--c-dark) 12%, transparent),
+    inset -1.5px 2.5px 0 -2px color-mix(in srgb, var(--c-dark) 20%, transparent),
+    inset 0 3px 4px -2px color-mix(in srgb, var(--c-dark) 20%, transparent),
+    inset 2px -6.5px 1px -4px color-mix(in srgb, var(--c-dark) 10%, transparent),
+    0 16px 34px -18px rgba(22, 42, 68, 0.28),
+    0 2px 10px -6px rgba(22, 42, 68, 0.16);
+}
+
+/* 펼친 모드: 접힌 레일과 높이는 그대로 두고 폭만 시작 메뉴만큼 넓힌다.
+   높이를 같이 바꾸면 창이 세로로 흔들려 펼침이 풀리는 문제가 생긴다.
+
+   굴절은 테두리에만 남기고 가운데는 스크림으로 덮는다. 레일은 20px이라
+   비치는 배경이 분위기지만, 펼친 패널은 글자가 많아 그대로 비치면 읽기 어렵다. */
+.dock-shell-vertical.dock-shell-menu {
+  width: 360px;
+  padding: 12px 10px;
+  border-radius: 24px;
+  overflow: hidden;
+  /* 실시간 굴절 캔버스 위에 얹히는 색. 거의 불투명하게 둔다. */
+  --glass-tint: color-mix(in srgb, #0a0f18 62%, transparent);
+  /* 굴절 캔버스가 없는 경우(다크 테마 기본)에 쓰이는 표면 자체의 색. */
+  background: rgba(12, 17, 25, 0.9);
+  /* 실시간 굴절이 켜지면 --glass-base가 none으로 와서 이 블러를 끈다. */
+  backdrop-filter: var(--glass-base, blur(40px) saturate(120%));
+  -webkit-backdrop-filter: var(--glass-base, blur(40px) saturate(120%));
+}
+
+:root[data-theme="light"] .dock-shell-vertical.dock-shell-menu {
+  --glass-tint: color-mix(in srgb, #f7fbff 66%, transparent);
+  background: rgba(247, 251, 255, 0.9);
+}
+
+/* ---------- 창 미리보기 ----------
+   레일 막대 위에 머물면 독 왼쪽에 뜬다. 클릭을 가로채지 않도록 pointer-events는 끈다.
+   표면 색은 펼친 패널과 같은 계열을 써서 같은 재질로 보이게 한다. */
+.preview-slot {
+  position: relative;
+  flex: none;
+  width: 300px;
+  min-height: 240px;
+  align-self: stretch;
   pointer-events: none;
 }
 
-/* ---------- 독 아이템: 작은 유리 알약 ---------- */
+/* 테두리 선 없이 그림자와 안쪽 하이라이트로만 표면을 만든다(독과 같은 원칙).
+   제목은 이미지 아래 따로 띠를 두지 않고, 아래에서 올라오는 그라데이션 위에 얹는다. */
+.preview-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(10, 14, 21, 0.94);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 20px 52px -20px rgba(0, 0, 0, 0.72),
+    0 6px 18px -6px rgba(0, 0, 0, 0.38);
+  animation: preview-in 140ms var(--anim--hover-ease);
+}
 
-.dock-item {
+/* 창 크기가 제각각이어도 카드 높이가 튀지 않도록 비율을 고정하고 위쪽을 기준으로 잘라 낸다. */
+.preview-card > img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  object-position: top center;
+}
+
+/* 캡처를 못 받았을 때의 자리. 흰 여백으로 보이지 않도록 창 뼈대를 그린 어두운 판을 쓴다. */
+.preview-blank {
   position: relative;
-  width: 52px;
-  height: 52px;
-  flex: none;
+  display: block;
+  aspect-ratio: 16 / 9;
+  background: linear-gradient(160deg, rgba(58, 72, 94, 0.5), rgba(14, 19, 27, 0.86));
+}
+
+.preview-blank::before {
+  content: "";
+  position: absolute;
+  inset: 18px 18px auto;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    0 16px 0 -1px rgba(255, 255, 255, 0.1),
+    0 30px 0 -1px rgba(255, 255, 255, 0.08),
+    0 62px 0 -1px rgba(255, 255, 255, 0.05);
+}
+
+.preview-title {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 9999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background:
-    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.05) 58%, rgba(255, 255, 255, 0.02)),
-    rgba(255, 255, 255, 0.04);
-  backdrop-filter: blur(8px);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.45),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.12),
-    0 3px 8px -3px rgba(0, 0, 0, 0.3);
-  transition: background 200ms ease, box-shadow 200ms ease;
-  cursor: pointer;
-  padding: 0;
+  gap: 6px;
+  padding: 22px 12px 9px;
+  background: linear-gradient(
+    to top,
+    rgba(6, 9, 14, 0.94) 0%,
+    rgba(6, 9, 14, 0.66) 52%,
+    rgba(6, 9, 14, 0) 100%
+  );
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
+  color: #f4f7ff;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-.dock-item:hover {
-  background:
-    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.08) 58%, rgba(255, 255, 255, 0.03)),
-    rgba(255, 255, 255, 0.06);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.6),
-    inset 0 -2px 4px rgba(0, 0, 0, 0.1),
-    0 8px 18px -6px rgba(0, 0, 0, 0.4);
+.preview-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.dock-item:active {
-  box-shadow:
-    inset 0 2px 5px rgba(0, 0, 0, 0.25),
-    0 2px 6px -3px rgba(0, 0, 0, 0.3);
-}
-
-.dock-icon {
-  width: 30px;
-  height: 30px;
+.preview-icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
   object-fit: contain;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.45));
 }
 
-/* 실행 중인 창 아래에 놓이는 작은 점 */
-.dock-dot {
+:root[data-theme="light"] .preview-card {
+  background: rgba(250, 252, 255, 0.96);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    0 20px 52px -22px rgba(19, 34, 57, 0.42),
+    0 6px 18px -8px rgba(19, 34, 57, 0.22);
+}
+
+@keyframes preview-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-card { animation: none; }
+}
+
+/* ---------- 대기 레일 (25px) ----------
+   화면 아래에 뜨는 캡슐. 내용 높이만큼만 자라고 창 목록·미디어·볼륨·배터리만 담는다.
+   색·그라데이션·글로우는 쓰지 않는다: 같은 잉크의 밝기와 직사각형 크기로만 읽는다. */
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  /* 짧은 막대가 아니라 화면 아래에 세워 둔 독으로 읽히도록 최소 세로 길이를 둔다.
+     내용이 적으면 섹션 사이로 여백이 퍼지고, 창이 늘면 그만큼 더 자란다. */
+  min-height: 340px;
+  justify-content: space-between;
+  padding: 12px 0 10px;
+  animation: rail-in 200ms var(--anim--hover-ease) both;
+}
+
+@keyframes rail-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 위쪽 한 덩이: 펼침 손잡이 · 두 줄 시계 · 창 획. */
+.rail-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  flex: none;
+}
+
+/* 아주 작은 당김 손잡이. 화살표·도움말 아이콘 대신 막대 하나로 '여기를 누르면 펼쳐진다'를
+   알린다. 클릭하면 실제로 펼쳐진다. */
+.rail-handle {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 10px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.rail-handle::before {
+  content: "";
+  width: 9px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--rail-ink);
+  opacity: 0.34;
+  transition: opacity 140ms ease;
+}
+
+.rail-handle:hover::before,
+.rail-handle:focus-visible::before {
+  opacity: 0.6;
+}
+
+.rail-handle:focus-visible {
+  outline: none;
+}
+
+/* 시계는 두 줄(시/분). 초 없이 분 단위로만 바뀌어 조용하다. */
+.rail-clock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding: 3px 0 4px;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--rail-ink);
+  opacity: 0.55;
+}
+
+/* 창 하나당 짧은 획 하나 + 옆의 작은 점. 누르면 그 창으로 전환한다.
+   창이 많으면 레일이 위로 자란다 — 정보가 늘면 표면도 는다. */
+.rail-windows {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: 100%;
+  flex: none;
+}
+
+.rail-window {
+  position: relative;
+  display: block;
+  width: 20px;
+  /* 획 사이 간격을 넓혀 손가락으로도 누를 수 있게 한다. */
+  height: 15px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* 실행 중인 창은 크게 만들지 않는다. 화면에 떠 있는 창은 검은 획,
+   최소화된 창은 꺼진 듯 옅은 획으로 둔다. 커서를 올리면 그 획만 부드럽게 커진다. */
+.rail-window::before {
+  content: "";
   position: absolute;
-  bottom: -1px;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 5px;
+  border-radius: 999px;
+  transform: translate(-50%, -50%);
+  background: var(--rail-ink);
+  opacity: 0.18;
+  transition:
+    width 170ms var(--anim--hover-ease, ease),
+    height 170ms var(--anim--hover-ease, ease),
+    opacity 140ms ease;
+}
+
+/* 점은 '지금 화면에 떠 있는 창'에만 붙는다. 최소화된 창은 점이 없다. */
+.rail-window::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 50%;
+  transform: translate(9px, -50%);
+  background: var(--rail-ink);
+  opacity: 0;
+  transition:
+    opacity 140ms ease,
+    width 170ms var(--anim--hover-ease, ease),
+    height 170ms var(--anim--hover-ease, ease),
+    transform 170ms var(--anim--hover-ease, ease);
+}
+
+/* 지금 보는 창만 진한 잉크. 떠 있지만 포커스가 없는 창은 반투명하게 남긴다. */
+.rail-window:not(.is-off)::before {
+  opacity: 0.5;
+}
+
+.rail-window:not(.is-off)::after {
+  opacity: 0.4;
+}
+
+.rail-window.is-active::before {
+  opacity: 1;
+}
+
+.rail-window.is-active::after {
+  opacity: 1;
+}
+
+.rail-window.is-off::before {
+  opacity: 0.12;
+}
+
+.rail-window.is-off::after {
+  opacity: 0;
+}
+
+/* 커서를 올리면 획이 가로·세로로 자란다. 최소화된 창도 살짝 밝아져 복원할 수 있음을 알린다. */
+.rail-window:hover::before,
+.rail-window:focus-visible::before {
+  width: 15px;
+  height: 7px;
+  opacity: 1;
+}
+
+/* 최소화된 창도 커서를 올리면 같은 잉크로 돌아온다. 회색으로 남으면
+   눌러도 되는 건지, 왜 다른 색인지 헷갈린다. */
+.rail-window.is-off:hover::before,
+.rail-window.is-off:focus-visible::before {
+  opacity: 1;
+}
+
+/* 점도 획과 함께 자란다. 획이 길어지면 점은 살짝 바깥으로 비켜 서로 붙지 않는다. */
+.rail-window:not(.is-off):hover::after,
+.rail-window:not(.is-off):focus-visible::after {
+  opacity: 0.85;
+  width: 3.5px;
+  height: 3.5px;
+  transform: translate(9.5px, -50%);
+}
+
+/* 오른쪽 독에서는 점이 화면 안쪽을 향하도록 획의 왼쪽에 붙인다. */
+.dock-right .rail-window::after {
+  transform: translate(-9px, -50%);
+}
+
+.dock-right .rail-window:not(.is-off):hover::after,
+.dock-right .rail-window:not(.is-off):focus-visible::after {
+  transform: translate(-9.5px, -50%);
+}
+
+.rail-window:focus-visible {
+  outline: none;
+}
+
+/* 미디어: 작은 음표 아래에서 제목과 진행 바가 5초씩 번갈아 나타난다.
+   둘을 나란히 두면 좁은 폭에서 진행 바가 볼륨 게이지처럼 보이므로 한 자리를 나눠 쓴다. */
+.rail-media {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  flex: none;
+  padding: 2px 0;
+}
+
+.rail-media-note {
+  width: 10px;
+  height: 10px;
+  color: var(--rail-ink);
+  opacity: 0.5;
+}
+
+.rail-media-swap {
+  position: relative;
+  display: block;
+  width: 22px;
+  height: 56px;
+  overflow: hidden;
+}
+
+.rail-media-title {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
   left: 50%;
   transform: translateX(-50%);
-  width: 5px;
-  height: 5px;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 9px;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  color: var(--rail-ink);
+  opacity: 0.8;
+  white-space: nowrap;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent);
+  mask-image: linear-gradient(to bottom, #000 80%, transparent);
 }
 
-.dock-fallback {
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 17px;
+.rail-media-progress {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+}
+
+/* 미디어 진행 바는 가로 막대다. 세로 볼륨 게이지와 모양·방향이 달라
+   두 막대가 나란히 보여도 어느 쪽이 미디어인지 바로 읽힌다. */
+.rail-media-track {
+  display: block;
+  width: 16px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: var(--rail-ink-soft);
+}
+
+.rail-media-track > i {
+  position: relative;
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--rail-ink);
+  opacity: 0.8;
+}
+
+/* 채움 끝의 작은 재생헤드. 반쯤 찬 막대가 '진행률'임을 더 분명히 한다. */
+.rail-media-track > i::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: 50%;
+  width: 2px;
+  height: 2px;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  background: var(--rail-ink);
+}
+
+/* 재생 중일 때만 제목 → 진행 바 → 제목 순으로 조용히 넘어간다. */
+.rail-media.is-playing .rail-media-title {
+  animation: rail-swap 10s ease-in-out infinite;
+}
+
+.rail-media.is-playing .rail-media-progress {
+  animation: rail-swap 10s ease-in-out infinite -5s;
+}
+
+@keyframes rail-swap {
+  0%,
+  44% {
+    opacity: 1;
+  }
+  50%,
+  94% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* 볼륨: 스피커 아이콘이 용도를 밝히고 세로 게이지가 값을 보여 준다. */
+.rail-volume {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 1px 0;
+}
+
+.rail-volume-icon {
+  width: 11px;
+  height: 11px;
+  color: var(--rail-ink);
+  opacity: 0.55;
+}
+
+.rail-gauge {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  width: 4px;
+  height: 44px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 1px;
+  background: var(--rail-ink-soft);
+}
+
+.rail-gauge > i {
+  display: block;
+  width: 100%;
+  background: var(--rail-ink);
+  opacity: 0.75;
+  transition: height 420ms var(--anim--hover-ease, ease);
+}
+
+.rail-volume.is-muted .rail-volume-icon {
+  opacity: 0.3;
+}
+
+.rail-volume.is-muted .rail-gauge > i {
+  opacity: 0.15;
+}
+
+/* 배터리: 25%짜리 직사각형 네 개. 위의 작은 돌기가 배터리임을 알린다. */
+.rail-battery {
+  position: relative;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+  margin-top: 2px;
+  /* 위쪽 여백은 충전 중 번개가 앉을 자리다. */
+  padding: 9px 0 1px;
+}
+
+.rail-battery-cap {
+  position: absolute;
+  top: 1px;
+  width: 3px;
+  height: 2px;
+  border-radius: 1px 1px 0 0;
+  background: var(--rail-ink);
+  opacity: 0.25;
+}
+
+.rail-battery > i {
+  display: block;
+  width: 12px;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--rail-ink-soft);
+  transition: background 200ms ease;
+}
+
+.rail-battery > i.is-lit {
+  background: var(--rail-ink);
+  opacity: 0.82;
+}
+
+/* 충전 중: 번개 아이콘과 함께 켜진 칸이 아래에서 위로 천천히 흐른다.
+   색은 쓰지 않고 밝기만 움직여 레일의 무채색 규칙을 지킨다. */
+.rail-battery-bolt {
+  position: absolute;
+  top: 0;
+  width: 6px;
+  height: 8px;
+  color: var(--rail-ink);
+  opacity: 0.9;
+}
+
+.rail-battery.is-charging > i.is-lit {
+  animation: rail-charge 1.8s ease-in-out infinite;
+}
+
+.rail-battery.is-charging > i.is-lit:nth-child(2) { animation-delay: 0s; }
+.rail-battery.is-charging > i.is-lit:nth-child(3) { animation-delay: 0.15s; }
+.rail-battery.is-charging > i.is-lit:nth-child(4) { animation-delay: 0.3s; }
+.rail-battery.is-charging > i.is-lit:nth-child(5) { animation-delay: 0.45s; }
+
+@keyframes rail-charge {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail {
+    animation: none;
+  }
+
+  .rail-window::before,
+  .rail-gauge > i,
+  .rail-battery > i {
+    transition: none;
+  }
+
+  .rail-battery.is-charging > i.is-lit {
+    animation: none;
+  }
+
+  .rail-media.is-playing .rail-media-title {
+    animation: none;
+    opacity: 0.8;
+  }
+
+  .rail-media.is-playing .rail-media-progress {
+    animation: none;
+    opacity: 0;
+  }
+}
+
+
+/* ---------- 시작 메뉴 내용 ---------- */
+.start-menu {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  gap: 10px;
+}
+
+/* 지금 재생 중인 곡. 앨범 아트 자리·제목·아티스트·상태·진행 바를 한 카드에 담는다.
+   정보가 없어도 빈 앨범 자리를 음표로 채워 카드가 허전해 보이지 않게 한다. */
+.start-media {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 2px 10px;
+  flex: none;
+  padding: 9px 10px 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+}
+
+:root[data-theme="light"] .start-media {
+  background: rgba(28, 41, 57, 0.05);
+}
+
+.start-media-art {
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted, rgba(248, 250, 252, 0.64));
+}
+
+:root[data-theme="light"] .start-media-art {
+  background: rgba(28, 41, 57, 0.06);
+}
+
+.start-media-art svg {
+  width: 19px;
+  height: 19px;
+}
+
+.start-media-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.start-media-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary, #f4f7ff);
+}
+
+.start-media-artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-muted, rgba(248, 250, 252, 0.64));
+}
+
+/* 재생/일시정지는 색 대신 작은 중성 칩으로 표시한다. */
+.start-media-state {
+  align-self: start;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.07);
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  color: var(--text-muted, rgba(248, 250, 252, 0.64));
+  white-space: nowrap;
+}
+
+:root[data-theme="light"] .start-media-state {
+  background: rgba(28, 41, 57, 0.07);
+}
+
+/* 진행 바는 카드 폭 전체를 쓰는 3px 직사각형. 그라데이션 없이 단색. */
+.start-media-track {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  height: 3px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+:root[data-theme="light"] .start-media-track {
+  background: rgba(28, 41, 57, 0.12);
+}
+
+.start-media-track > i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text-primary, #f4f7ff);
+  opacity: 0.55;
+}
+
+/* 레일은 막대 길이로만 알려 주므로, 정확한 볼륨·배터리 값은 패널에서 숫자와 막대로 읽는다. */
+.start-status {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  flex: none;
+}
+
+.start-status-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 9px 9px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+:root[data-theme="light"] .start-status-item {
+  background: rgba(28, 41, 57, 0.035);
+}
+
+.start-status-item svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted, rgba(248, 250, 252, 0.72));
+}
+
+.start-status-label {
+  font-size: 10px;
+  color: var(--text-muted, rgba(248, 250, 252, 0.72));
+}
+
+.start-status-value {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary, #f4f7ff);
+}
+
+.start-status-bar {
+  grid-column: 1 / -1;
+  height: 2px;
+  margin-top: 2px;
+  overflow: hidden;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+:root[data-theme="light"] .start-status-bar {
+  background: rgba(28, 41, 57, 0.1);
+}
+
+.start-status-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--text-primary, #f4f7ff);
+  opacity: 0.5;
+}
+
+.start-status-item.is-muted svg {
+  opacity: 0.5;
+}
+
+.start-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* 왼쪽 독: 버튼을 화면 끝(왼쪽)에, 검색창을 오른쪽에 둔다. row-reverse면
+   입력창이 오른쪽 끝, X가 왼쪽 끝으로 간다. */
+.start-head.is-left {
+  flex-direction: row-reverse;
+}
+
+.start-search {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 11px;
+  font-size: 13px;
+}
+
+.start-icon {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  color: var(--text-muted, rgba(248, 250, 252, 0.7));
+}
+
+.start-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.start-icon:hover {
+  color: var(--text-primary, #fff);
+}
+
+.start-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.start-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+}
+
+.start-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, rgba(248, 250, 252, 0.72));
+}
+
+.start-label-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 9.5px;
+  color: var(--text-primary);
+}
+
+:root[data-theme="light"] .start-label-count {
+  background: rgba(25, 40, 59, 0.1);
+}
+
+/* 최소화된(숨겨진) 창은 반투명하게 둔다. 지금 열린 창과 한눈에 구분된다. */
+.start-list-hidden .start-row {
+  opacity: 0.58;
+}
+
+.start-list-hidden .start-row:hover,
+.start-list-hidden .start-row.is-active {
+  opacity: 1;
+}
+
+.start-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+/* 창·앱 검색 결과 목록. 한 줄에 아이콘 + 제목 + 종류(실행 파일명/앱). */
+.start-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.start-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  flex: none;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-primary, #f8fafc);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.start-row:hover,
+.start-row.is-active {
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.start-row.is-current .start-row-title {
   font-weight: 600;
 }
 
-.dock-sep {
-  width: 1px;
-  height: 32px;
-  margin: 0 4px 8px;
+.start-row-icon {
+  width: 20px;
+  height: 20px;
   flex: none;
-  background: linear-gradient(
-    180deg,
-    transparent,
-    rgba(255, 255, 255, 0.3) 40%,
-    rgba(255, 255, 255, 0.3) 60%,
-    transparent
-  );
+  object-fit: contain;
 }
 
-.dock-launcher {
-  color: rgba(255, 255, 255, 0.85);
+.start-row-fallback {
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--dock-tint, rgba(255, 255, 255, 0.15));
+  font-size: 11px;
+  font-weight: 650;
 }
 
-.dock-launcher-on {
-  border-color: rgba(255, 255, 255, 0.35);
-  background:
-    radial-gradient(circle at 30% 22%, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.1) 58%),
-    rgba(255, 255, 255, 0.08);
+.start-row-title {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.start-row-kind {
+  flex: none;
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--text-muted, rgba(248, 250, 252, 0.55));
+}
+
+.start-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.start-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* 독은 화면 가장자리에서 떠 있는 캡슐·카드다. 좌우 어느 쪽이든 같은 모서리와 그림자를 쓰고,
+   App이 DOM 순서만 뒤집어 미리보기·설정 패널을 반대쪽에 놓는다. */
+
+/* 리퀴드 글래스: 투명 창에서는 backdrop-filter가 바탕화면을 볼 수 없으므로, 러스트가 캡처한
+   표면 뒤 픽셀을 캔버스에 그리고 CSS filter: url(#필터)로 굴절시킨다(레퍼런스와 같은 구성).
+   캡처가 없으면 --glass-*가 비어 있어 아무것도 그리지 않고 표면 자체의 블러가 쓰인다. */
+.dock-shell,
+.launcher-panel {
+  position: relative;
+  isolation: isolate;
+  /* 굴절 레이어가 표면 밖으로 삐져나온 캡처 여백을 잘라낸다. */
+  overflow: hidden;
+}
+
+/* 굴절을 WebGL로 직접 그리는 캔버스. 기기 픽셀 크기로 그려서 배율과 무관하게 선명하다.
+   SVG 필터를 겹치면 CSS 해상도로 다시 래스터화되어 뿌예지므로 걸지 않는다. */
+.glass-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.dock-shell::before,
+.launcher-panel::before {
+  content: "";
+  position: absolute;
+  inset: var(--backdrop-inset, 0);
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background-color: var(--glass-tint-color, transparent);
+  background-image: var(--glass-backdrop, none);
+  background-size: 100% 100%;
+  background-position: 0 0;
+  background-repeat: no-repeat;
+  filter: var(--glass-filter, none);
+}
+
+/* 유리 테두리: 흰 하이라이트 없이 안쪽 어두운 음영과 바깥 그림자만 둔다.
+   (테두리의 흰 선은 유리보다 플라스틱처럼 보여서 뺐다) */
+.dock-shell::after,
+.launcher-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: var(--glass-ring, 0);
+  box-shadow:
+    /* 안쪽 어두운 면 — 유리의 두께 */
+    inset -0.3px -1px 4px 0px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 12%), transparent),
+    inset -1.5px 2.5px 0px -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+    inset 0px 3px 4px -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+    inset 2px -6.5px 1px -4px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent),
+    /* 표면 바깥 그림자 */
+    0px 1px 5px 0px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent),
+    0px 6px 16px 0px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 8%), transparent);
 }
 
 /* ---------- 실행기 패널 ---------- */
 
 .launcher-panel {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  /* 폭을 뷰포트 비율(92vw)로 제한하면 지금 창 폭에 갇혀 펼칠 때 넓어지지 못한다.
+     (설정은 680px를 요청하고, 화면보다 크면 Rust가 작업 영역에 맞춰 자른다.) */
   width: 680px;
-  max-width: 92vw;
   padding: 14px;
   border-radius: 30px;
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(48px) saturate(190%) brightness(1.05);
-  -webkit-backdrop-filter: blur(48px) saturate(190%) brightness(1.05);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.55),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 0 32px rgba(255, 255, 255, 0.05),
-    0 16px 44px -12px rgba(0, 0, 0, 0.4);
+  background: var(--dock-bg, rgba(29, 34, 42, 0.84));
+  backdrop-filter: var(--glass-base, blur(32px) saturate(170%));
+  -webkit-backdrop-filter: var(--glass-base, blur(32px) saturate(170%));
+  border: none;
+  box-shadow: var(--panel-shadow, 0 16px 44px -12px rgba(0,0,0,0.4));
   animation: panel-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -178,25 +1393,24 @@ body {
 .launcher-input {
   width: 100%;
   box-sizing: border-box;
-  padding: 11px 16px;
-  border-radius: 16px;
+  padding: 13px 15px;
+  border-radius: 15px;
   font-size: 14px;
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   outline: none;
-  transition: border-color 200ms ease, box-shadow 200ms ease;
+  transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
 }
 
 .launcher-input::placeholder {
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-muted, rgba(248, 250, 252, 0.66));
 }
 
 .launcher-input:focus {
-  border-color: rgba(255, 255, 255, 0.4);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.25),
-    0 0 0 4px rgba(255, 255, 255, 0.08);
+  border-color: rgba(143, 197, 255, 0.58);
+  background: rgba(255, 255, 255, 0.085);
+  box-shadow: 0 0 0 4px rgba(72, 163, 255, 0.11), inset 0 1px 0 rgba(255,255,255,0.12);
 }
 
 .launcher-grid {
@@ -207,6 +1421,11 @@ body {
   max-height: 46vh;
   overflow-y: auto;
   padding: 2px;
+}
+
+.launcher-panel-side .launcher-grid {
+  max-height: min(72vh, 720px);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .launcher-grid::-webkit-scrollbar {
@@ -223,21 +1442,44 @@ body {
 .launcher-item {
   display: flex;
   flex-direction: column;
+  /* 화면 밖 타일은 레이아웃·페인트를 건너뛴다. 240개를 한 번에 그리면 패널이 멈춘다. */
+  content-visibility: auto;
+  contain-intrinsic-size: 40px 88px;
   align-items: center;
-  gap: 7px;
-  padding: 12px 6px 10px;
-  border-radius: 20px;
+  gap: 9px;
+  padding: 14px 8px 12px;
+  border-radius: 17px;
   border: 1px solid transparent;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   font-size: 11px;
   cursor: pointer;
   transition: background 160ms ease, border-color 160ms ease, transform 180ms ease;
 }
 
 .launcher-item:hover {
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.18);
+  background: rgba(255,255,255,0.085);
+  border-color: rgba(255,255,255,0.13);
   transform: translateY(-2px);
+}
+
+.launcher-item-pinned {
+  position: relative;
+}
+
+/* 고정된 앱에 작은 점을 다는다. 하이라이트 장식이 아니라 상태 표시만 한다. */
+.launcher-pin {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent-blue);
+}
+
+.launcher-item:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
 }
 
 .launcher-item span {
@@ -251,7 +1493,7 @@ body {
   width: 40px;
   height: 40px;
   object-fit: contain;
-  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.3));
+  filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.18));
 }
 
 .launcher-fallback {
@@ -263,8 +1505,9 @@ body {
   border-radius: 13px;
   font-size: 18px;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--dock-tint, rgba(255, 255, 255, 0.12));
+  border: 1px solid var(--border, rgba(255, 255, 255, 0.18));
+  color: var(--text-primary, #f8fafc);
 }
 
 .launcher-empty {
@@ -272,6 +1515,670 @@ body {
   margin: 0;
   padding: 28px 0;
   text-align: center;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-muted, rgba(248, 250, 252, 0.66));
   font-size: 13px;
+}
+
+.launcher-panel-side {
+  width: 356px;
+  max-width: 356px;
+  min-height: 220px;
+  overflow: hidden;
+  border-radius: 26px;
+  animation-name: panel-in-side;
+}
+
+.launcher-panel-side .launcher-input {
+  background: rgba(255,255,255,0.065);
+}
+
+:root[data-theme="light"] {
+  .launcher-panel {
+    background:
+      radial-gradient(120% 80% at 100% 0%, rgba(113, 168, 242, 0.1), transparent 70%),
+      var(--dock-bg-light);
+  }
+
+  .launcher-panel-side .launcher-input {
+    background: rgba(255,255,255,0.62);
+    border-color: rgba(45,75,112,0.12);
+  }
+
+  .launcher-item:hover {
+    background: rgba(58, 110, 177, 0.075);
+    border-color: rgba(58, 110, 177, 0.12);
+  }
+
+  .start-row:hover,
+  .start-row.is-active {
+    background: rgba(58, 110, 177, 0.1);
+  }
+}
+
+.launcher-panel-side .launcher-grid {
+  gap: 6px;
+  padding: 4px 2px 2px;
+  /* 패널 높이는 Rust가 정한 maxHeight로 잘린다. 그리드가 먼저 줄어들어
+     하단 전원 버튼이 잘리지 않게 한다. */
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+}
+
+/* ===== 전원 버튼 ===== */
+.launcher-power {
+  flex: none;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.launcher-power-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.launcher-power-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 2px 5px;
+  border-radius: 12px;
+  color: var(--text-muted);
+  /* em으로 크기가 정해지는 링·음영의 기준값. */
+  font-size: 12px;
+  transition:
+    color var(--anim--hover-time) var(--anim--hover-ease),
+    transform var(--anim--hover-time) var(--anim--hover-ease),
+    box-shadow var(--anim--hover-time) var(--anim--hover-ease),
+    background var(--anim--hover-time) var(--anim--hover-ease);
+}
+
+.launcher-power-btn svg {
+  width: 17px;
+  height: 17px;
+}
+
+.launcher-power-btn .glass-btn-label {
+  font-size: 10px;
+}
+
+.launcher-power-btn:hover {
+  color: var(--text-primary);
+}
+
+/* 두 번째 클릭을 기다리는 상태. 붉은 기운으로 실행 직전임을 알린다. */
+.glass-btn.launcher-power-btn.is-confirming {
+  color: #ffd9d9;
+  background: linear-gradient(180deg, rgba(255, 107, 107, 0.32), rgba(255, 74, 74, 0.2));
+  box-shadow:
+    inset 0 0.125em 0.125em rgba(0, 0, 0, 0.08),
+    inset 0 -0.125em 0.125em rgba(255, 255, 255, 0.35),
+    0 0 0.7em rgba(255, 74, 74, 0.35);
+}
+
+.launcher-power-notice {
+  margin: 0 0 6px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.launcher-power-error {
+  color: #ff9a9a;
+}
+
+:root[data-theme="light"] .launcher-power {
+  border-top-color: rgba(45, 75, 112, 0.12);
+}
+
+:root[data-theme="light"] .launcher-power-btn {
+  background: rgba(255, 255, 255, 0.55);
+  color: rgba(25, 40, 59, 0.7);
+}
+
+:root[data-theme="light"] .launcher-power-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.85);
+}
+
+/* ===== search row + gear ===== */
+.launcher-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.launcher-search > .launcher-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.launcher-settings-btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.launcher-settings-btn .glass-btn-label {
+  font-size: 15px;
+}
+
+.launcher-settings-btn:hover {
+  color: var(--text-primary);
+}
+
+/* ===== settings view ===== */
+.settings-panel {
+  overflow-y: auto;
+  gap: 12px;
+  color: var(--text-primary);
+}
+
+.settings-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-back {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: inherit;
+  font-size: 12px;
+  padding: 0;
+}
+
+.settings-back .glass-btn-label {
+  font-size: 15px;
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* 설정 분류 탭. 위에서 갈아 끼우면 아래 내용이 짧게 떠오른다. */
+.settings-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  flex: none;
+  border-radius: 12px;
+  background-color: color-mix(in srgb, var(--c-glass) 12%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 10%), transparent),
+    inset 1.5px 2px 0 -2px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 80%), transparent),
+    inset -0.3px -1px 4px 0 color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 12%), transparent),
+    inset 0 3px 4px -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 18%), transparent);
+}
+
+.settings-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    color 160ms ease,
+    background-color 220ms ease,
+    box-shadow 220ms ease;
+}
+
+.settings-tab:hover {
+  color: var(--text-primary);
+}
+
+.settings-tab.is-active {
+  color: var(--text-primary);
+  background-color: color-mix(in srgb, var(--c-glass) 34%, transparent);
+  box-shadow:
+    inset 1.5px 1px 0 -1px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 80%), transparent),
+    inset -1px 2px 3px -1px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 18%), transparent),
+    0 2px 5px -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent);
+}
+
+/* 분류를 바꿔도 패널 높이가 덜렁거리지 않도록 최소 높이를 둔다. */
+.settings-tabpane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 318px;
+  animation: settings-pane-in 190ms var(--anim--hover-ease) both;
+}
+
+@keyframes settings-pane-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.settings-pins {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-pin {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border-radius: 10px;
+}
+
+.settings-pin-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.settings-icon-btn,
+.settings-text-btn {
+  border-radius: 8px;
+  color: inherit;
+  font-size: 12px;
+  padding: 2px 8px;
+}
+
+.settings-icon-btn {
+  width: 26px;
+  padding: 2px 0;
+  height: 26px;
+  font-size: 12px;
+}
+
+.settings-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* ===== 테마 스위처 =====
+   가로로 늘어선 선택지 위를 유리 막대가 미끄러진다. 막대는 이동할 때 가로로
+   늘었다 줄어(scale) 물처럼 튀는 느낌을 낸다. 늘어나는 기준점은 진행 방향의
+   반대쪽(뒤통수)이라 앞으로 늘어난 것처럼 보인다.
+   --idx(0..3)로 위치를 정하고, data-idx가 바뀌면 같은 내용의 키프레임 이름이
+   바뀌어 애니메이션이 다시 시작된다(이름이 같으면 재생되지 않는다). */
+.settings-switch {
+  --pad: 4px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 38px;
+  margin: 0;
+  padding: var(--pad);
+  box-sizing: border-box;
+  border-radius: 99em;
+  background-color: color-mix(in srgb, var(--c-glass) 12%, transparent);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 10%), transparent),
+    inset 1.8px 3px 0 -2px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 90%), transparent),
+    inset -2px -2px 0 -2px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 80%), transparent),
+    inset -3px -8px 1px -6px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 60%), transparent),
+    inset -0.3px -1px 4px 0 color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 12%), transparent),
+    inset -1.5px 2.5px 0 -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+    inset 0 3px 4px -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+    inset 2px -6.5px 1px -4px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent),
+    0 1px 5px 0 color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent),
+    0 6px 16px 0 color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 8%), transparent);
+  transition:
+    background-color 400ms cubic-bezier(1, 0, 0.4, 1),
+    box-shadow 400ms cubic-bezier(1, 0, 0.4, 1);
+}
+
+/* 미끄러지는 막대. 너비가 선택지 하나와 같아 translate 100%가 한 칸이다. */
+.settings-switch::after {
+  content: "";
+  position: absolute;
+  left: var(--pad);
+  top: var(--pad);
+  bottom: var(--pad);
+  width: calc((100% - var(--pad) * 2) / var(--steps, 4));
+  border-radius: 99em;
+  background-color: color-mix(in srgb, var(--c-glass) 36%, transparent);
+  z-index: -1;
+  translate: calc(var(--idx, 0) * 100%) 0;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 10%), transparent),
+    inset 2px 1px 0 -1px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 90%), transparent),
+    inset -1.5px -1px 0 -1px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 80%), transparent),
+    inset -2px -6px 1px -5px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 60%), transparent),
+    inset -1px 2px 3px -1px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+    inset 0 -4px 1px -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent),
+    0 3px 6px 0 color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 8%), transparent);
+  transition:
+    translate 400ms cubic-bezier(1, 0, 0.4, 1),
+    background-color 400ms cubic-bezier(1, 0, 0.4, 1),
+    box-shadow 400ms cubic-bezier(1, 0, 0.4, 1);
+  animation: switch-snap0 440ms ease;
+}
+
+.settings-switch[data-dir="right"]::after {
+  transform-origin: left center;
+}
+
+.settings-switch[data-dir="left"]::after {
+  transform-origin: right center;
+}
+
+.settings-switch[data-idx="1"]::after { animation-name: switch-snap1; }
+.settings-switch[data-idx="2"]::after { animation-name: switch-snap2; }
+.settings-switch[data-idx="3"]::after { animation-name: switch-snap3; }
+
+@keyframes switch-snap0 {
+  0% { scale: 1 1; }
+  50% { scale: 1.12 1; }
+  100% { scale: 1 1; }
+}
+
+@keyframes switch-snap1 {
+  0% { scale: 1 1; }
+  50% { scale: 1.12 1; }
+  100% { scale: 1 1; }
+}
+
+@keyframes switch-snap2 {
+  0% { scale: 1 1; }
+  50% { scale: 1.12 1; }
+  100% { scale: 1 1; }
+}
+
+@keyframes switch-snap3 {
+  0% { scale: 1 1; }
+  50% { scale: 1.12 1; }
+  100% { scale: 1 1; }
+}
+
+.settings-switch__option {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  /* fieldset 안에서는 height:100%가 기대한 높이로 풀리지 않아 늘림으로 채운다. */
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 99em;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 160ms ease;
+}
+
+.settings-switch__option:hover {
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.settings-switch__option:has(input:checked) {
+  color: var(--text-primary);
+  cursor: auto;
+}
+
+.settings-switch__icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  transition: scale 200ms cubic-bezier(0.5, 0, 0, 1);
+}
+
+.settings-switch__option:hover .settings-switch__icon {
+  scale: 1.2;
+}
+
+.settings-switch__option:has(input:checked) .settings-switch__icon {
+  scale: 1;
+}
+
+.settings-switch__text {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 라디오는 숨기되 레이블 클릭과 방향키 이동은 그대로 둔다. */
+.settings-switch__input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(100%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-switch::after {
+    animation: none;
+  }
+}
+
+.settings-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-kbd {
+  flex: 1 1 auto;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.settings-range-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 독 세로 길이 슬라이더. 레퍼런스(liquid toggle)의 유리 트랙과 액체 손잡이를 옮겼다.
+   트랙 안에 액체가 차오르고, 손잡이는 평소 흰 유리다가 끄는 동안 액체 색으로 번진다. */
+.liquid-slider {
+  --slider-pad: 10px;
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 34px;
+}
+
+.liquid-slider__defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.liquid-slider__track {
+  position: relative;
+  width: 100%;
+  height: 28px;
+  border-radius: 99em;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+  overflow: hidden;
+  background-color: color-mix(in srgb, var(--c-glass) 12%, transparent);
+  backdrop-filter: blur(8px) saturate(150%);
+  -webkit-backdrop-filter: blur(8px) saturate(150%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 10%), transparent),
+    inset 1.8px 3px 0 -2px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 90%), transparent),
+    inset -2px -2px 0 -2px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 80%), transparent),
+    inset -3px -8px 1px -6px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 60%), transparent),
+    inset -0.3px -1px 4px 0 color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 12%), transparent),
+    inset -1.5px 2.5px 0 -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+    inset 0 3px 4px -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+    inset 2px -6.5px 1px -4px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent),
+    0 1px 5px 0 color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent),
+    0 6px 16px 0 color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 8%), transparent);
+  transition: box-shadow 260ms cubic-bezier(1, 0, 0.4, 1);
+}
+
+.liquid-slider__track:focus-visible {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 10%), transparent),
+    inset 1.8px 3px 0 -2px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 90%), transparent),
+    inset -2px -2px 0 -2px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 80%), transparent),
+    inset -3px -8px 1px -6px color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 60%), transparent),
+    inset -0.3px -1px 4px 0 color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 12%), transparent),
+    inset -1.5px 2.5px 0 -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+    inset 0 3px 4px -2px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+    inset 2px -6.5px 1px -4px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent),
+    0 0 0 2px color-mix(in srgb, var(--rail-ink) 32%, transparent);
+}
+
+/* 액체가 흐르는 홈. 트랙 안쪽만큼 여백을 두어 손잡이가 밖으로 나가지 않는다. */
+.liquid-slider__liquid {
+  position: absolute;
+  left: var(--slider-pad);
+  right: var(--slider-pad);
+  top: 50%;
+  height: 12px;
+  translate: 0 -50%;
+  border-radius: 99em;
+}
+
+/* 액체는 무채색: 값이 커질수록 잉크가 진해져 흰색에서 검정으로 넘어간다.
+   (라이트 테마는 흰→검, 다크 테마는 투명→흰색으로 같은 규칙을 뒤집어 쓴다.) */
+.liquid-slider__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--ratio) * 100%);
+  min-width: 13px;
+  border-radius: inherit;
+  background: var(--rail-ink);
+  opacity: calc(0.16 + var(--ratio) * 0.84);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 26%, transparent);
+  transition:
+    width 150ms cubic-bezier(0.22, 1.32, 0.36, 1),
+    opacity 160ms ease;
+}
+
+/* 끄는 동안에만 goo 필터를 건다. 액체와 손잡이의 경계가 녹아 한 덩이가 된다. */
+.liquid-slider__liquid {
+  transition: filter 180ms ease;
+}
+
+.liquid-slider[data-dragging="true"] .liquid-slider__liquid {
+  filter: url(#liquid-slider-goo);
+}
+
+.liquid-slider__knob {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--ratio) * 100%);
+  width: 18px;
+  height: 18px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  /* 손잡이는 액체와 같은 잉크. 평소에는 흰 덮개가 가리고 있다가
+     누르면 덮개가 사라져 액체가 드러난다(레퍼런스의 cover). */
+  background: var(--rail-ink);
+  box-shadow:
+    inset 1px 1px 2px rgba(0, 0, 0, 0.12),
+    inset -1px -1px 2px rgba(255, 255, 255, 0.35),
+    0 1px 4px rgba(0, 0, 0, 0.3);
+  transition:
+    left 150ms cubic-bezier(0.22, 1.32, 0.36, 1),
+    scale 180ms var(--anim--hover-ease);
+}
+
+.liquid-slider__knob::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+.liquid-slider__track:hover .liquid-slider__knob {
+  scale: 1.12;
+}
+
+/* 끄는 동안: 흰 덮개가 걷히고 손잡이가 가로로 늘어나 액체처럼 흐른다. */
+.liquid-slider[data-dragging="true"] .liquid-slider__knob {
+  scale: 1.5 1.12;
+}
+
+.liquid-slider[data-dragging="true"] .liquid-slider__knob::after {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liquid-slider__fill,
+  .liquid-slider__knob {
+    transition: none;
+  }
+}
+
+.settings-range-value {
+  min-width: 46px;
+  text-align: right;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.settings-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+@keyframes panel-in-side {
+  from { opacity: 0; transform: translateX(12px) scale(0.985); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .launcher-panel { animation: none; }
+  .launcher-item { transition: none; }
 }

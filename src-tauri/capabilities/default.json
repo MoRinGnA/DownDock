@@ -3,5 +3,8 @@
   "identifier": "default",
   "description": "독 창에 기본 권한만 준다. 앱 명령은 자체 명령이라 별도 허가가 필요 없다.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-focus"
+  ]
 }
