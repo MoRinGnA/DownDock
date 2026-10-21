@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import type { AppEntry, RunningWindow, Side, TrayApp } from "../lib/ipc";
+import type { WindowGroup } from "../lib/windows";
 import { useSystemStatus } from "../lib/useSystemStatus";
 import { glassStyle, useDesktopBackdrop, useLiquidGlass, useLiveGlass } from "../lib/liquidGlass";
 import GlassFilter from "./GlassFilter";
@@ -10,6 +11,8 @@ type Props = {
   apps: AppEntry[];
   pinnedPaths: string[];
   running: RunningWindow[];
+  // 같은 앱의 창을 묶은 레일용 목록. 시작 메뉴는 창 단위 그대로 쓴다.
+  groups: WindowGroup[];
   // 화면에 창 없이 트레이에만 남은 프로그램.
   tray: TrayApp[];
   // true면 시작 메뉴, false면 접힌 대기 레일. 레일은 내용 높이에 맞춰 줄어든다.
@@ -32,6 +35,12 @@ type Props = {
   onFocus: (hwnd: number) => void;
   // 레일 막대에 마우스를 올리면 그 창의 미리보기를 요청한다.
   onHoverWindow: (win: RunningWindow | null, top: number) => void;
+  // 창이 여러 개인 앱에 올리면 창 목록을 띄운다.
+  onHoverGroup: (group: WindowGroup, top: number) => void;
+  // 창이 여러 개인 앱의 막대를 누르면 그룹 전체를 접거나 판다.
+  onToggleGroup: (group: WindowGroup) => void;
+  // 창을 우클릭하면 그 창의 메뉴(전환·최소화·닫기)를 띄운다.
+  onMenuWindow: (win: RunningWindow, top: number) => void;
   onOpenSettings: () => void;
   // 자동 테마: 독 뒤 배경 평균 밝기가 어두워졌는지 알린다.
   onBackdropDark: (dark: boolean) => void;
@@ -46,6 +55,7 @@ export default function Dock({
   apps,
   pinnedPaths,
   running,
+  groups,
   tray,
   expanded,
   height,
@@ -60,6 +70,9 @@ export default function Dock({
   onLaunch,
   onFocus,
   onHoverWindow,
+  onHoverGroup,
+  onToggleGroup,
+  onMenuWindow,
   onTogglePin,
   onOpenSettings,
   onBackdropDark,
@@ -76,14 +89,17 @@ export default function Dock({
     shellRef,
     glassCanvas,
     liquid,
-    // 펼친 패널은 굴절이 끝(테두리)에만 남도록 흐림을 키우고 채도를 낮춘다.
-    // 바탕화면 색이 그대로 올라오면 목록 글자가 묻힌다.
+    // 표면 사다리(--rail-tint 52% / --panel-tint 80%, 스크림까지 더하면 약 50% / 80%).
+    // 이 Tune은 굴절(뒤 배경을 가장자리에서 당겨 오는 정도)이라 틴트 %와 직접 같지는 않다.
+    // 펼침은 굴절이 끝(테두리)에만 남도록 흐림을 키우고 채도를 낮춘다 — 바탕화면 색이
+    // 그대로 올라오면 목록 글자가 묻힌다. 접힘은 틴트가 두꺼워진 만큼 잡색만 눌러 두고
+    // (흐림 4) 벽지의 색은 남길 정도(채도 1.3)로만 낮춘다.
     {
       radius,
       bezel,
       scale: expanded ? 24 : 18,
-      blur: expanded ? 9 : 3,
-      saturation: expanded ? 1.05 : 1.45,
+      blur: expanded ? 9 : 4,
+      saturation: expanded ? 1.02 : 1.3,
     },
     onBackdropDark,
   );
@@ -130,15 +146,19 @@ export default function Dock({
             onOpenSettings={onOpenSettings}
             onClose={onClose}
             onHoverWindow={onHoverWindow}
+            onMenuWindow={onMenuWindow}
           />
         ) : (
           <InfoRail
             status={status}
-            running={running}
+            groups={groups}
             railHeight={railHeight}
             onFocus={onFocus}
             onExpand={onExpand}
             onHoverWindow={onHoverWindow}
+            onHoverGroup={onHoverGroup}
+            onToggleGroup={onToggleGroup}
+            onMenuWindow={onMenuWindow}
           />
         )}
       </div>

@@ -98,27 +98,56 @@ fn collect_lnk(dir: &Path, entries: &mut Vec<AppEntry>, seen: &mut HashSet<Strin
     }
 }
 
+/// PNG 바이트를 data URL로. 추출한 아이콘과 레지스트리에 저장된 아이콘
+/// 스냅샷(트레이 목록)이 같은 형식을 쓰므로 변환을 한곳에 둔다.
+pub fn png_data_url(bytes: &[u8]) -> String {
+    format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(bytes)
+    )
+}
+
+pub(crate) fn is_png(bytes: &[u8]) -> bool {
+    bytes.starts_with(b"\x89PNG\r\n\x1a\n")
+}
+
+/// 캐시가 원본보다 오래됐는지. 앱이 제자리에서 업데이트되면 실행 파일만 바뀌므로
+/// 시각을 비교하지 않으면 예전 아이콘이 계속 남는다. 시간을 읽지 못하면(권한 등)
+/// 캐시를 믿고 그대로 쓴다 — 아이콘이 바뀌는 것보다 안 뜨는 편이 더 나쁘다.
+fn cache_is_fresh(cache: &Path, source: &Path) -> bool {
+    let Ok(cached) = std::fs::metadata(cache).and_then(|m| m.modified()) else {
+        return false;
+    };
+    match std::fs::metadata(source).and_then(|m| m.modified()) {
+        Ok(updated) => cached >= updated,
+        // 원본 시각을 모르면 캐시를 믿는다 — 아이콘이 안 뜨는 편이 더 나쁘다.
+        Err(_) => true,
+    }
+}
+
 /// 아이콘을 PNG 데이터 URL로. 한 번 추출한 아이콘은 파일 캐시에서 다시 읽는다.
 /// .lnk뿐 아니라 UWP(스토어 앱) 바로 가기도 이 크레이트가 처리한다.
 pub fn icon_data_url(path: &Path) -> Option<String> {
     let cache_dir = data_dir().join("icons");
     let cache = cache_dir.join(format!("{}.png", hash_id(path)));
 
-    let bytes = match std::fs::read(&cache) {
-        Ok(bytes) => bytes,
-        Err(_) => {
-            let image =
-                windows_icons::get_icon_by_path_with_size(path, IconSize::Large).ok()?;
-            let _ = std::fs::create_dir_all(&cache_dir);
-            image.save(&cache).ok()?;
-            std::fs::read(&cache).ok()?
+    if cache_is_fresh(&cache, path) {
+        match std::fs::read(&cache) {
+            // 캐시가 깨졌으면(0바이트, 중간에 쓰다 만 파일) 버리고 다시 뽑는다.
+            // 이 검사가 없으면 깨진 PNG를 그대로 data URL로 넘겨 아이콘이 빈칸이 된다.
+            Ok(bytes) if is_png(&bytes) => return Some(png_data_url(&bytes)),
+            Ok(_) => {
+                let _ = std::fs::remove_file(&cache);
+            }
+            Err(_) => {}
         }
-    };
+    }
 
-    Some(format!(
-        "data:image/png;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(bytes)
-    ))
+    let image = windows_icons::get_icon_by_path_with_size(path, IconSize::Large).ok()?;
+    let _ = std::fs::create_dir_all(&cache_dir);
+    image.save(&cache).ok()?;
+    let bytes = std::fs::read(&cache).ok()?;
+    Some(png_data_url(&bytes))
 }
 
 /// 바로 가기를 기본 프로그램으로 연다. 셸이 해석하므로 .lnk도 exe도 같은 경로로 돈다.
@@ -146,4 +175,35 @@ pub fn launch_app(path: String) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 앱이 제자리에서 업데이트되면 실행 파일만 새로워진다. 캐시 시각을 비교하지 않으면
+    // 예전 아이콘이 계속 남는다.
+    #[test]
+    fn icon_cache_expires_when_source_is_newer() {
+        let dir = std::env::temp_dir().join(format!("downdock-icon-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cache = dir.join("icon.png");
+        let source = dir.join("app.exe");
+
+        // 캐시가 없으면 새로 뽑아야 한다.
+        std::fs::write(&source, b"exe").unwrap();
+        assert!(!cache_is_fresh(&cache, &source));
+
+        // 캐시를 방금 썼으면 그대로 쓴다.
+        std::fs::write(&cache, b"png").unwrap();
+        assert!(cache_is_fresh(&cache, &source));
+
+        // 원본이 더 새로워지면(업데이트) 캐시를 버린다.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(&source, b"exe v2").unwrap();
+        assert!(!cache_is_fresh(&cache, &source));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

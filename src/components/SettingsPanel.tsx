@@ -24,6 +24,8 @@ type Props = {
   onVertical: (vertical: Vertical) => void;
   railHeight: number;
   onRailHeight: (height: number) => void;
+  autostart: boolean;
+  onAutostart: (enabled: boolean) => void;
   liquid: boolean;
   facet: boolean;
 };
@@ -98,12 +100,19 @@ const VERTICAL_OPTIONS: SwitchOption<Vertical>[] = [
 
 type SwitchOption<T extends string> = { value: T; label: string; icon: string };
 
+// 로그온 자동 시작. 두 칸짜리 스위처라 지금 상태가 한눈에 보인다.
+const AUTOSTART_OPTIONS: SwitchOption<"on" | "off">[] = [
+  { value: "on", label: "켬", icon: "M5 12.5l4.5 4.5L19 7" },
+  { value: "off", label: "끔", icon: "M6 6l12 12M18 6 6 18" },
+];
+
 // 설정 분류. 위 탭으로 갈아 끼우며 한 번에 한 분류만 보여 준다.
-type SettingsTab = "pins" | "look" | "keys";
+type SettingsTab = "pins" | "look" | "keys" | "system";
 const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "pins", label: "고정 앱" },
   { id: "look", label: "화면" },
   { id: "keys", label: "단축키" },
+  { id: "system", label: "동작" },
 ];
 
 // 가로로 늘어선 선택지 위를 유리 막대가 미끄러지는 스위처.
@@ -191,6 +200,8 @@ export default function SettingsPanel({
   onVertical,
   railHeight,
   onRailHeight,
+  autostart,
+  onAutostart,
   liquid,
   facet,
 }: Props) {
@@ -416,6 +427,23 @@ export default function SettingsPanel({
             (saved
               ? `${saved} 로 등록했습니다. 어디서든 이 키로 메뉴가 열리고 닫힙니다.`
               : "어디서든 이 키를 누르면 메뉴가 열리고 닫힙니다. Esc로 취소합니다.")          }
+        </p>
+      </section>
+        )}
+
+        {tab === "system" && (
+      <section className="settings-section">
+        <h3 className="settings-label">시작</h3>
+        <Switcher
+          name="autostart"
+          label="로그온할 때 자동 시작"
+          options={AUTOSTART_OPTIONS}
+          value={autostart ? "on" : "off"}
+          onChange={(value) => onAutostart(value === "on")}
+        />
+        <p className="settings-hint">
+          켜면 Windows에 로그온할 때 DownDock이 함께 떠 작업표시줄을 대신할 준비를 마칩니다.
+          끄면 다음 로그온부터 뜨지 않고, 지금 실행 중인 독은 그대로 남습니다.
         </p>
       </section>
         )}

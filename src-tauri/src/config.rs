@@ -29,6 +29,9 @@ pub struct Config {
     pub vertical: String,
     /// 접힌 레일의 세로 길이(px). 창이 많으면 이 값보다 길어진다.
     pub rail_height: u32,
+    /// 로그온할 때 자동으로 띄울지. 실제 등록은 OS가 들고 있으므로, 이 값은
+    /// 마지막으로 성공한 설정을 기억하는 용도다(시작할 때 한 번 맞춘다).
+    pub autostart: bool,
 }
 
 impl Default for Config {
@@ -43,6 +46,8 @@ impl Default for Config {
             // 기본은 화면 아래에 붙인다.
             vertical: "bottom".into(),
             rail_height: 340,
+            // 처음 실행에 로그온 등록을 몰래 넣지 않는다. 설정에서 켜게 한다.
+            autostart: false,
         }
     }
 }
@@ -144,9 +149,72 @@ pub fn set_rail_height(height: u32) -> Result<(), String> {
     config.save()
 }
 
+/// 저장된 값과 OS의 로그온 등록을 맞춘다. 레지스트리에서 지워졌거나 새 PC로
+/// 옮겨 왔어도, 설정이 켜져 있으면 다시 등록한다. 실패해도 독은 떠야 하므로 조용히 넘긴다.
+pub fn sync_autostart(app: &tauri::AppHandle) {
+    use tauri_plugin_autostart::ManagerExt;
+
+    let Ok(config) = Config::load() else {
+        return;
+    };
+    let manager = app.autolaunch();
+    if config.autostart {
+        // 이미 등록돼 있어도 다시 쓴다 — 디버그/릴리스 빌드처럼 실행 파일 경로가
+        // 바뀌었을 때 예전 경로를 가리키는 등록이 남지 않게 한다.
+        let _ = manager.enable();
+    } else if matches!(manager.is_enabled(), Ok(true)) {
+        let _ = manager.disable();
+    }
+}
+
+/// OS에 실제로 등록돼 있는지. 설정 파일과 어긋날 수 있어 UI는 이 값을 보여 준다.
+#[tauri::command]
+pub fn get_autostart(app: tauri::AppHandle) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|e| format!("자동 시작 상태를 읽지 못했습니다: {e}"))
+}
+
+/// 로그온 자동 시작을 켜고 끈다. OS 등록이 성공한 뒤에 설정을 바꾼다 —
+/// 반대로 하면 화면에는 켜짐으로 보이는데 실제로는 안 뜨는 상태가 된다.
+#[tauri::command]
+pub fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    use tauri_plugin_autostart::ManagerExt;
+
+    let manager = app.autolaunch();
+    if enabled {
+        manager
+            .enable()
+            .map_err(|e| format!("자동 시작을 켜지 못했습니다: {e}"))?;
+    } else {
+        manager
+            .disable()
+            .map_err(|e| format!("자동 시작을 끄지 못했습니다: {e}"))?;
+    }
+
+    let mut config = Config::load()?;
+    config.autostart = enabled;
+    config.save()?;
+
+    manager
+        .is_enabled()
+        .map_err(|e| format!("자동 시작 상태를 확인하지 못했습니다: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // 예전 설정 파일에는 autostart가 없다. 없으면 꺼진 상태로 읽어야 한다.
+    #[test]
+    fn old_config_without_autostart_still_loads() {
+        let config: Config = serde_json::from_str(r#"{"theme":"dark"}"#).unwrap();
+        assert_eq!(config.theme, "dark");
+        assert!(!config.autostart);
+        assert_eq!(config.shortcut, DEFAULT_SHORTCUT);
+    }
 
     // 실제 설정을 건드리지 않도록 임시 APPDATA로 저장·재로딩을 확인한다.
     #[test]

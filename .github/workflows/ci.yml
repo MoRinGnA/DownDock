@@ -1,0 +1,51 @@
+name: CI
+
+# 푸시·PR마다 프런트엔드 빌드와 러스트 검사·테스트를 돌린다.
+# 타우리 앱은 Windows 전용이므로 러너도 Windows를 쓴다.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: windows-latest
+
+    steps:
+      - name: 저장소 받기
+        uses: actions/checkout@v4
+
+      - name: Node 준비
+        uses: actions/setup-node@v4
+        with:
+          # package-lock.json을 그대로 쓰므로 버전을 고정한다.
+          node-version: 22
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      # tsc가 타입을 검사하고 vite가 dist를 만든다. 타우리는 이 dist를 품는다.
+      - name: 프런트엔드 빌드
+        run: npm run build
+
+      - name: Rust 준비
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust 캐시
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Rust 검사
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+      # 화면·레지스트리가 필요한 검사는 #[ignore]라 여기서는 빠진다.
+      # 자동 시작·트레이 목록 같은 실제 환경 검사는 로컬에서 --ignored로 돌린다.
+      - name: Rust 테스트
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib

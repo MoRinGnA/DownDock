@@ -29,6 +29,8 @@ type Props = {
   onClose: () => void;
   // 목록의 창 줄에 마우스를 올리면 접힌 레일과 똑같이 미리보기를 띄운다.
   onHoverWindow: (win: RunningWindow | null, top: number) => void;
+  // 창 줄을 우클릭하면 그 창의 메뉴를 띄운다.
+  onMenuWindow: (win: RunningWindow, top: number) => void;
 };
 
 // 전원 동작. 창 목록 아래에 놓는다.
@@ -72,6 +74,7 @@ export default function StartMenu({
   onOpenSettings,
   onClose,
   onHoverWindow,
+  onMenuWindow,
 }: Props) {
   const pinned = useMemo(() => {
     const byPath = new Map(apps.map((app) => [app.path, app]));
@@ -92,6 +95,10 @@ export default function StartMenu({
   }, [apps, running, query]);
 
   const searching = query.trim().length > 0;
+  // 화면에 떠 있는 창과 최소화된 창을 나눠 그린다. 섞여 있으면 제목만 보고
+  // "지금 떠 있는 창"과 "복원해야 하는 창"을 구분할 수 없다.
+  const openCount = running.filter((win) => !win.minimized).length;
+  const hiddenCount = running.length - openCount;
 
   // 키보드로 고른 줄. 검색어나 창 목록이 바뀌면 처음으로 돌아간다.
   const [active, setActive] = useState(0);
@@ -133,7 +140,16 @@ export default function StartMenu({
     onHoverWindow(win, rect.top + rect.height / 2 - shellTop);
   };
 
-  const windowRow = (win: RunningWindow, index: number) => (
+  // 제목에 앱 이름이 이미 보이면("KakaoTalk — 채팅") 오른쪽 칸을 비운다.
+  // 없으면("새 탭") 앱 이름을 채워 어느 앱의 창인지 알 수 있게 한다.
+  const missingAppName = (win: RunningWindow) => {
+    const name = exeName(win.exe).toLowerCase();
+    return name.length > 0 && !(win.title || "").toLowerCase().includes(name);
+  };
+
+  // 오른쪽 칸은 '모르는 것'만 적는다. 검색 결과에서는 같은 이름의 창과 앱을 가려야
+  // 하니 실행 파일 이름을 쓰지만, 섹션 목록에서는 제목과 겹쳐 "Chrome Chrome"이 된다.
+  const windowRow = (win: RunningWindow, index: number, showExe = false) => (
     <button
       key={`w-${win.hwnd}`}
       className={`start-row${active === index ? " is-active" : ""}${
@@ -146,6 +162,14 @@ export default function StartMenu({
         hoverRow(e.currentTarget, win);
       }}
       onMouseLeave={() => onHoverWindow(null, 0)}
+      onContextMenu={(e) => {
+        // 줄 전체가 하나의 버튼이라 기본 메뉴 대신 창 메뉴를 띄운다.
+        e.preventDefault();
+        const shellTop =
+          e.currentTarget.closest(".dock-shell")?.getBoundingClientRect().top ?? 0;
+        const rect = e.currentTarget.getBoundingClientRect();
+        onMenuWindow(win, rect.top + rect.height / 2 - shellTop);
+      }}
       title={win.title || win.exe}
     >
       {win.icon ? (
@@ -154,7 +178,13 @@ export default function StartMenu({
         <span className="start-row-fallback">{(win.title || exeName(win.exe)).slice(0, 1)}</span>
       )}
       <span className="start-row-title">{win.title || exeName(win.exe)}</span>
-      <span className="start-row-kind">{exeName(win.exe)}</span>
+      {/* 검색에서는 창과 앱을 가려야 하니 실행 파일 이름을, 목록에서는 제목에 없는
+          앱 이름만 적는다("새 탭" → Chrome). 같은 말을 두 번 쓰지 않으면서 정보는 남긴다. */}
+      {showExe ? (
+        <span className="start-row-kind">{exeName(win.exe)}</span>
+      ) : (
+        missingAppName(win) && <span className="start-row-kind">{exeName(win.exe)}</span>
+      )}
     </button>
   );
 
@@ -266,7 +296,7 @@ export default function StartMenu({
             <h2 className="start-label">검색 결과</h2>
             <div className="start-list">
               {results.map((result, i) =>
-                result.kind === "window" ? windowRow(result.win, i) : appRow(result.app, i),
+                result.kind === "window" ? windowRow(result.win, i, true) : appRow(result.app, i),
               )}
             </div>
             {results.length === 0 && <p className="launcher-empty">찾은 항목이 없습니다.</p>}
@@ -274,14 +304,31 @@ export default function StartMenu({
         ) : (
           <>
             <section className="start-section">
-              <h2 className="start-label">지금 열린 창</h2>
+              <h2 className="start-label">
+                지금 열린 창
+                {openCount > 0 && <span className="start-label-count">{openCount}</span>}
+              </h2>
               <div className="start-list">
-                {running.map((win, i) => windowRow(win, i))}
+                {/* 인덱스는 running 순서를 그대로 쓴다. 섹션을 나눠도 검색 결과와
+                    같은 순서라 ↑↓ 선택이 어긋나지 않는다. */}
+                {running.map((win, i) => (win.minimized ? null : windowRow(win, i)))}
               </div>
-              {running.length === 0 && (
+              {openCount === 0 && (
                 <p className="launcher-empty">화면에 열린 창이 없습니다.</p>
               )}
             </section>
+
+            {hiddenCount > 0 && (
+              <section className="start-section">
+                <h2 className="start-label">
+                  최소화된 창
+                  <span className="start-label-count">{hiddenCount}</span>
+                </h2>
+                <div className="start-list start-list-hidden">
+                  {running.map((win, i) => (win.minimized ? windowRow(win, i) : null))}
+                </div>
+              </section>
+            )}
 
             {tray.length > 0 && (
               <section className="start-section">

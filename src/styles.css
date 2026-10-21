@@ -23,6 +23,45 @@
   --dock-surface: var(--dock-surface-dark);
   --dock-tint-dark: rgba(255, 255, 255, 0.085);
   --dock-tint-light: rgba(255, 255, 255, 0.72);
+  /* ===== 표면 사다리: 접힘 52% · 펼침 80% (+스크림 ≈ 50% / 80%) =====
+     두 상태는 같은 유리 한 장이고 두께만 다르다. 접힘은 23px뿐이라 표면적이 없어,
+     12% 틴트로는 밝은 바탕화면에서 흰 잉크가 통째로 묻힌다(실측). 그래서 접힘에도
+     읽을 수 있을 만큼의 바닥을 깔고, 펼침은 글자가 사는 면이라 80%까지만 비운다.
+     12% ↔ 96%처럼 다른 재질로 갈리는 대신 두 상태가 한 계열로 읽힌다.
+
+     두께는 --glass-tint가 맡는다. 실시간 굴절 캔버스는 배경을 불투명하게(alpha 1) 그리므로,
+     표면 배경색은 캔버스에 가려져 실제 앱에서는 두께에 기여하지 못한다. 캔버스 위에 얹히는
+     ::before의 틴트가 곧 유리의 두께다. 표면 배경은 굴절이 꺼졌을 때의 결만 맡는다.
+
+     아래 %는 color-mix 양 = 바탕화면을 가리는 틴트 농도다. 접힘 52%는 레일(막대기) 바닥에
+     깔리는 농도, 펼침 80%는 목록 글자가 뜨는 패널의 농도다(실측: 더 넓은 표면은 바탕이 더
+     많이 보이므로 틴트를 더 세게 써야 판독성이 유지된다). 라이트 테마는 흰 잉크 가독을
+     위해 흰 틴트로 같은 52/80 사다리를 적용한다. */
+  --rail-tint-dark: color-mix(in srgb, #0b1018 52%, transparent);
+  --panel-tint-dark: color-mix(in srgb, #0b111b 80%, transparent);
+  --rail-tint-light: color-mix(in srgb, #ffffff 52%, transparent);
+  --panel-tint-light: color-mix(in srgb, #f7fbff 80%, transparent);
+  /* 세로 스크림. 위는 빛을 받고 아래는 살짝 가라앉아 필름이 아니라 세워 둔 막대로 읽힌다.
+     펼침은 위(검색창)·아래(전원)를 조금 진하게, 가운데 목록은 얇게 둔다. */
+  --rail-scrim-dark:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0) 30%, rgba(0, 0, 0, 0.1));
+  --panel-scrim-dark:
+    linear-gradient(180deg, rgba(9, 14, 21, 0.1), rgba(9, 14, 21, 0) 46%, rgba(9, 14, 21, 0.14));
+  --rail-scrim-light:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0) 36%, rgba(20, 40, 70, 0.05));
+  --panel-scrim-light:
+    linear-gradient(180deg, rgba(250, 253, 255, 0.12), rgba(250, 253, 255, 0) 46%, rgba(20, 40, 70, 0.05));
+  /* 굴절이 꺼진 경로(액체 유리 끔·캔버스를 못 만들 때)에서 틴트와 함께 놓이는 얇은 바탕. */
+  --rail-base-dark: color-mix(in srgb, #0b1018 10%, transparent);
+  --panel-base-dark: color-mix(in srgb, #0b111b 8%, transparent);
+  --rail-base-light: color-mix(in srgb, #ffffff 8%, transparent);
+  --panel-base-light: color-mix(in srgb, #f7fbff 6%, transparent);
+  --rail-tint: var(--rail-tint-dark);
+  --panel-tint: var(--panel-tint-dark);
+  --rail-scrim: var(--rail-scrim-dark);
+  --panel-scrim: var(--panel-scrim-dark);
+  --rail-base: var(--rail-base-dark);
+  --panel-base: var(--panel-base-dark);
   /* 유리 재질: 레퍼런스(liquid glass)의 색·반사 구조를 그대로 따른다.
      --glass-reflex-light/dark 가 빛 반사와 그림자 세기를 테마별로 조절한다. */
   --c-glass: #bbbbbc;
@@ -62,6 +101,12 @@
     --dock-bg: var(--dock-bg-light);
     --dock-surface: var(--dock-surface-light);
     --dock-tint: var(--dock-tint-light);
+    --rail-tint: var(--rail-tint-light);
+    --panel-tint: var(--panel-tint-light);
+    --rail-scrim: var(--rail-scrim-light);
+    --panel-scrim: var(--panel-scrim-light);
+    --rail-base: var(--rail-base-light);
+    --panel-base: var(--panel-base-light);
     --glass-tint: var(--glass-tint-light);
     --glass-reflex-light: 1;
     --glass-reflex-dark: 1;
@@ -293,8 +338,8 @@ body {
 
 /* 접힌 레일: 화면 아래에 뜨는 23px 캡슐. 높이는 내용물이 정한다.
    빈 공간을 만들지 않으려고 표면이 창 목록·미디어·배터리에 딱 맞춰 줄어든다.
-   표면은 레퍼런스 스위처와 같은 적층 유리: 유리색 12% 틴트 위에 안쪽 하이라이트와
-   안쪽 그림자를 여러 겹 얹어 두께를 만든다. */
+   표면은 펼침과 같은 유리 재질이다. 12%로는 밝은 바탕화면에서 획이 묻혀서 46%의
+   바닥을 깔고, 그 위에 안쪽 하이라이트·그림자를 여러 겹 엮어 두께를 만든다. */
 /* 설정 패널 옆에 설 때는 레일이 패널 높이에 맞춰 늘어난다. 두 표면의 위아래 선이
    같아져 한 덩이로 읽힌다(높이를 따로 계산하지 않고 flex의 늘림에 맡긴다). */
 .dock-shell-beside-panel {
@@ -306,7 +351,10 @@ body {
   border-radius: 12px;
   padding: 0;
   cursor: pointer;
-  background-color: color-mix(in srgb, var(--c-glass) 12%, transparent);
+  /* 사다리의 아래 칸. 두께는 틴트가, 위·아래 결은 스크림이 만든다. */
+  --glass-tint: var(--rail-tint);
+  --glass-scrim: var(--rail-scrim);
+  background: var(--rail-base);
   backdrop-filter: var(--glass-base, blur(8px) saturate(150%));
   -webkit-backdrop-filter: var(--glass-base, blur(8px) saturate(150%));
   box-shadow:
@@ -327,7 +375,6 @@ body {
   /* 라이트 유리는 반사를 세게, 그림자는 옅게. 레퍼런스의 light 값(1/1)을 쓴다. */
   --glass-reflex-light: 1;
   --glass-reflex-dark: 1;
-  background-color: color-mix(in srgb, var(--c-glass) 12%, transparent);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--c-light) 10%, transparent),
     inset 1.8px 3px 0 -2px color-mix(in srgb, var(--c-light) 90%, transparent),
@@ -351,23 +398,161 @@ body {
   padding: 12px 10px;
   border-radius: 24px;
   overflow: hidden;
-  /* 실시간 굴절 캔버스 위에 얹히는 색. 거의 불투명하게 둔다. */
-  --glass-tint: color-mix(in srgb, #0a0f18 62%, transparent);
-  /* 굴절 캔버스가 없는 경우(다크 테마 기본)에 쓰이는 표면 자체의 색. */
-  background: rgba(12, 17, 25, 0.9);
+  /* 사다리의 위 칸(76%). 실시간 캔버스 위에 얹히는 막이 곧 두께다. */
+  --glass-tint: var(--panel-tint);
+  --glass-scrim: var(--panel-scrim);
+  background: var(--panel-base);
   /* 실시간 굴절이 켜지면 --glass-base가 none으로 와서 이 블러를 끈다. */
   backdrop-filter: var(--glass-base, blur(40px) saturate(120%));
   -webkit-backdrop-filter: var(--glass-base, blur(40px) saturate(120%));
 }
 
-:root[data-theme="light"] .dock-shell-vertical.dock-shell-menu {
-  --glass-tint: color-mix(in srgb, #f7fbff 66%, transparent);
-  background: rgba(247, 251, 255, 0.9);
-}
-
 /* ---------- 창 미리보기 ----------
    레일 막대 위에 머물면 독 왼쪽에 뜬다. 클릭을 가로채지 않도록 pointer-events는 끈다.
    표면 색은 펼친 패널과 같은 계열을 써서 같은 재질로 보이게 한다. */
+/* 창 우클릭 메뉴. 접힌 레일이 23px뿐이라 메뉴를 그릴 자리가 없어서,
+   미리보기와 같은 방식으로 옆 칸을 빌리고 창이 그만큼 넓어진다. */
+.menu-slot {
+  position: relative;
+  flex: none;
+  width: 216px;
+  min-height: 240px;
+  align-self: stretch;
+  pointer-events: none;
+}
+
+.window-menu {
+  position: absolute;
+  left: 0;
+  /* 클릭한 줄 근처에 두되, 메뉴가 칸 밖으로 나가지 않도록 위아래를 가둔다. */
+  top: clamp(8px, calc(var(--menu-top, 0px) - 30px), calc(100% - 150px));
+  width: 196px;
+  padding: 5px;
+  border-radius: 14px;
+  background: rgba(10, 14, 21, 0.95);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 18px 44px -18px rgba(0, 0, 0, 0.7),
+    0 4px 14px -4px rgba(0, 0, 0, 0.4);
+  pointer-events: auto;
+  animation: preview-in 130ms var(--anim--hover-ease);
+}
+
+/* 어느 창에 대고 연 메뉴인지 머리에 남긴다. 제목이 길면 한 줄로 자른다. */
+.window-menu-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px 7px;
+  font-size: 11px;
+  color: rgba(244, 247, 255, 0.6);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.window-menu-head img {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  object-fit: contain;
+}
+
+.window-menu-head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.window-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #eef3fa;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.window-menu-item svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  opacity: 0.78;
+}
+
+.window-menu-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.window-menu-item:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: -2px;
+}
+
+/* 되돌릴 수 없는 한 줄만 빨갛게 물든다. 위험도가 같은 무게로 보이면 안 된다. */
+.window-menu-item.is-danger:hover {
+  background: #d9424a;
+}
+
+.window-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 창이 여러 개인 앱에 올리면 뜨는 창 목록. 오른쪽 클릭 메뉴와 같은 표면을 쓰되
+   항목이 창 제목이라 한 줄에 제목과 상태를 나눠 담는다. */
+.group-menu {
+  /* 창이 많아도 화면 밖으로 자라지 않게 한다. */
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
+}
+
+/* 머리: 아이콘 · 앱 이름 · 창 개수. 이름이 길면 개수가 밀려나지 않게 줄인다. */
+.group-menu .window-menu-head span:first-of-type {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.window-menu-count {
+  flex: none;
+  padding-left: 6px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(244, 247, 255, 0.45);
+}
+
+.group-menu-row {
+  gap: 6px;
+}
+
+.group-menu-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 지금 보고 있는 창만 또렷하게, 최소화된 창은 흐리게. */
+.group-menu-row.is-current {
+  font-weight: 600;
+}
+
+.group-menu-row.is-off {
+  opacity: 0.62;
+}
+
+.group-menu-hint {
+  flex: none;
+  font-size: 10px;
+  color: rgba(244, 247, 255, 0.45);
+}
+
 .preview-slot {
   position: relative;
   flex: none;
@@ -385,6 +570,8 @@ body {
   right: 0;
   border-radius: 18px;
   overflow: hidden;
+  /* 칸 자체는 클릭을 통과시키지만, 카드에 창 버튼이 생겼으니 카드만 포인터를 받는다. */
+  pointer-events: auto;
   background: rgba(10, 14, 21, 0.94);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.07),
@@ -421,6 +608,57 @@ body {
     0 16px 0 -1px rgba(255, 255, 255, 0.1),
     0 30px 0 -1px rgba(255, 255, 255, 0.08),
     0 62px 0 -1px rgba(255, 255, 255, 0.05);
+}
+
+/* 카드 오른쪽 위에 붙는 창 버튼. 작업표시줄 미리보기의 ✕/—와 같은 자리다.
+   hover할 때만 나타나면 있는지 모르므로, 평소에는 흐리게 두고 hover에서 또렷해진다. */
+.preview-actions {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: flex;
+  gap: 4px;
+  opacity: 0.72;
+  transition: opacity 130ms ease;
+}
+
+.preview-card:hover .preview-actions,
+.preview-actions:focus-within {
+  opacity: 1;
+}
+
+.preview-action {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(10, 14, 21, 0.72);
+  color: #eaf0fa;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.preview-action:hover {
+  background: rgba(38, 48, 64, 0.92);
+}
+
+/* 닫기는 되돌릴 수 없으므로 hover에서만 붉게 물든다. */
+.preview-action.is-close:hover {
+  background: #d9424a;
+}
+
+.preview-action:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.preview-action svg {
+  width: 12px;
+  height: 12px;
 }
 
 .preview-title {
@@ -572,8 +810,8 @@ body {
   opacity: 0.55;
 }
 
-/* 창 하나당 짧은 획 하나 + 옆의 작은 점. 누르면 그 창으로 전환한다.
-   창이 많으면 레일이 위로 자란다 — 정보가 늘면 표면도 는다. */
+/* 창 하나당 짧은 획 하나. 누르면 그 창으로 전환한다. 창이 많으면 레일이
+   위로 자란다 — 정보가 늘면 표면도 는다. */
 .rail-windows {
   display: flex;
   flex-direction: column;
@@ -584,11 +822,11 @@ body {
 }
 
 .rail-window {
-  position: relative;
-  display: block;
+  display: grid;
+  place-items: center;
   width: 20px;
   /* 획 사이 간격을 넓혀 손가락으로도 누를 수 있게 한다. */
-  height: 15px;
+  height: 14px;
   flex: none;
   padding: 0;
   border: 0;
@@ -596,101 +834,44 @@ body {
   cursor: pointer;
 }
 
-/* 실행 중인 창은 크게 만들지 않는다. 화면에 떠 있는 창은 검은 획,
-   최소화된 창은 꺼진 듯 옅은 획으로 둔다. 커서를 올리면 그 획만 부드럽게 커진다. */
+/* 표시는 한 개만 둔다. 획 옆에 점을 하나 더 붙이면 창마다 표시가 두 개가 되어
+   세로로 점선이 한 줄 더 생긴 것처럼 보인다. 길이와 농도만으로 상태를 나누면
+   한 줄에 한 가지 뜻만 남아 시선이 흔들리지 않는다.
+   기본값 = 최소화된 창: 가장 짧고 옅은 획. */
 .rail-window::before {
   content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 12px;
-  height: 5px;
+  width: 6px;
+  height: 4px;
   border-radius: 999px;
-  transform: translate(-50%, -50%);
   background: var(--rail-ink);
-  opacity: 0.18;
+  opacity: 0.14;
   transition:
     width 170ms var(--anim--hover-ease, ease),
     height 170ms var(--anim--hover-ease, ease),
     opacity 140ms ease;
 }
 
-/* 점은 '지금 화면에 떠 있는 창'에만 붙는다. 최소화된 창은 점이 없다. */
-.rail-window::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 2.5px;
-  height: 2.5px;
-  border-radius: 50%;
-  transform: translate(9px, -50%);
-  background: var(--rail-ink);
-  opacity: 0;
-  transition:
-    opacity 140ms ease,
-    width 170ms var(--anim--hover-ease, ease),
-    height 170ms var(--anim--hover-ease, ease),
-    transform 170ms var(--anim--hover-ease, ease);
-}
-
-/* 지금 보는 창만 진한 잉크. 떠 있지만 포커스가 없는 창은 반투명하게 남긴다. */
+/* 화면에 떠 있지만 포커스가 없는 창: 가운데 길이와 농도. */
 .rail-window:not(.is-off)::before {
-  opacity: 0.5;
+  width: 10px;
+  height: 5px;
+  opacity: 0.42;
 }
 
-.rail-window:not(.is-off)::after {
-  opacity: 0.4;
-}
-
+/* 지금 보는 창: 가장 길고 가장 진하다. 길이가 곧 '여기'라는 표시다. */
 .rail-window.is-active::before {
+  width: 14px;
+  height: 6px;
   opacity: 1;
 }
 
-.rail-window.is-active::after {
-  opacity: 1;
-}
-
-.rail-window.is-off::before {
-  opacity: 0.12;
-}
-
-.rail-window.is-off::after {
-  opacity: 0;
-}
-
-/* 커서를 올리면 획이 가로·세로로 자란다. 최소화된 창도 살짝 밝아져 복원할 수 있음을 알린다. */
+/* 커서를 올리면 한 단계 더 자란다. 최소화된 창도 같은 잉크로 돌아와
+   '누를 수 있다'가 읽힌다. */
 .rail-window:hover::before,
 .rail-window:focus-visible::before {
-  width: 15px;
+  width: 17px;
   height: 7px;
   opacity: 1;
-}
-
-/* 최소화된 창도 커서를 올리면 같은 잉크로 돌아온다. 회색으로 남으면
-   눌러도 되는 건지, 왜 다른 색인지 헷갈린다. */
-.rail-window.is-off:hover::before,
-.rail-window.is-off:focus-visible::before {
-  opacity: 1;
-}
-
-/* 점도 획과 함께 자란다. 획이 길어지면 점은 살짝 바깥으로 비켜 서로 붙지 않는다. */
-.rail-window:not(.is-off):hover::after,
-.rail-window:not(.is-off):focus-visible::after {
-  opacity: 0.85;
-  width: 3.5px;
-  height: 3.5px;
-  transform: translate(9.5px, -50%);
-}
-
-/* 오른쪽 독에서는 점이 화면 안쪽을 향하도록 획의 왼쪽에 붙인다. */
-.dock-right .rail-window::after {
-  transform: translate(-9px, -50%);
-}
-
-.dock-right .rail-window:not(.is-off):hover::after,
-.dock-right .rail-window:not(.is-off):focus-visible::after {
-  transform: translate(-9.5px, -50%);
 }
 
 .rail-window:focus-visible {
@@ -1330,8 +1511,10 @@ body {
   z-index: -1;
   border-radius: inherit;
   pointer-events: none;
-  background-color: var(--glass-tint-color, transparent);
-  background-image: var(--glass-backdrop, none);
+  /* 액체 유리가 켜지면 --glass-tint-color가 같은 값을 한 번 더 지정한다(인라인).
+     꺼졌을 때도 틴트가 남도록 --glass-tint를 기본값으로 둔다. */
+  background-color: var(--glass-tint-color, var(--glass-tint, transparent));
+  background-image: var(--glass-scrim, none), var(--glass-backdrop, none);
   background-size: 100% 100%;
   background-position: 0 0;
   background-repeat: no-repeat;
@@ -1478,6 +1661,15 @@ body {
 }
 
 .launcher-item:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* 키보드로 옮겨 다닐 때만 링을 띄운다. 마우스로 누른 뒤에는 남지 않는다.
+   목록 줄과 패널 버튼이 지금 어디에 있는지 보이지 않으면 탭으로는 쓸 수 없다. */
+.start-row:focus-visible,
+.glass-btn:focus-visible,
+.settings-tab:focus-visible {
   outline: 2px solid var(--accent-blue);
   outline-offset: 2px;
 }

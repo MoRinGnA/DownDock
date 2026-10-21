@@ -10,7 +10,7 @@ use base64::Engine as _;
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
-use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT};
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS,
 };
@@ -34,9 +34,9 @@ use windows::Win32::Storage::Xps::{PrintWindow, PRINT_WINDOW_FLAGS};
 use windows::Win32::UI::WindowsAndMessaging::{
     BringWindowToTop, EnumWindows, GetAncestor, GetForegroundWindow, GetWindowLongPtrW,
     GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible,
-    SetForegroundWindow, SetWindowDisplayAffinity, SetWindowLongPtrW, ShowWindow,
+    PostMessageW, SetForegroundWindow, SetWindowDisplayAffinity, SetWindowLongPtrW, ShowWindow,
     SwitchToThisWindow, GA_ROOT, GWL_EXSTYLE, SW_MINIMIZE, SW_RESTORE, WDA_EXCLUDEFROMCAPTURE,
-    WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    WM_CLOSE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
 /// per-monitor v2 DPI 인식은 창이 만들어지기 전에 설정해야 물리 좌표가 흔들리지 않는다.
@@ -437,7 +437,9 @@ unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> windows::core
     windows::core::BOOL::from(true)
 }
 
-unsafe fn describe_window(hwnd: HWND) -> Option<RunningWindow> {
+/// 작업표시줄에 올릴 만한 창인지 보고 (제목, 실행 파일 경로)를 돌려준다.
+/// 아이콘 추출은 하지 않는다 — 트레이 목록처럼 경로만 필요한 곳도 쓰기 때문이다.
+unsafe fn shown_window(hwnd: HWND) -> Option<(String, PathBuf)> {
     if !IsWindowVisible(hwnd).as_bool() {
         return None;
     }
@@ -468,8 +470,11 @@ unsafe fn describe_window(hwnd: HWND) -> Option<RunningWindow> {
     if pid == 0 || pid == std::process::id() {
         return None;
     }
-    let exe = process_path(pid)?;
+    Some((title, process_path(pid)?))
+}
 
+unsafe fn describe_window(hwnd: HWND) -> Option<RunningWindow> {
+    let (title, exe) = shown_window(hwnd)?;
     Some(RunningWindow {
         hwnd: hwnd.0 as u64,
         title,
@@ -498,13 +503,32 @@ unsafe fn process_path(pid: u32) -> Option<PathBuf> {
 }
 
 /// 화면에 창이 떠 있는 실행 파일 경로. 트레이 전용 프로그램과 구분하는 데 쓴다.
+/// 독에 그릴 목록이 아니라 "이 프로그램은 지금 화면에 있나"만 아는 판별용이므로
+/// 아이콘은 뽑지 않고, 창 개수 상한(MAX_RUNNING_WINDOWS)도 두지 않는다.
+/// 상한을 두면 15번째 이후 창을 가진 앱이 숨김으로 잘못 분류된다.
 pub(crate) fn visible_exe_paths() -> std::collections::HashSet<String> {
-    unsafe {
-        collect_running(0)
-            .into_iter()
-            .map(|w| w.exe.to_lowercase())
-            .collect()
+    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> windows::core::BOOL {
+        let paths = &mut *(lparam.0 as *mut std::collections::HashSet<String>);
+        if let Some((_, exe)) = shown_window(hwnd) {
+            paths.insert(exe.to_string_lossy().to_lowercase());
+        }
+        windows::core::BOOL::from(true)
     }
+
+    let mut paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+    unsafe {
+        let _ = EnumWindows(
+            Some(collect),
+            LPARAM(&mut paths as *mut std::collections::HashSet<String> as isize),
+        );
+    }
+    paths
+}
+
+/// 프로세스의 실행 파일 전체 경로. 트레이 목록이 레지스트리에 적힌 경로와
+/// 지금 돌고 있는 프로세스를 맞춰 볼 때 쓴다.
+pub(crate) fn process_exe(pid: u32) -> Option<PathBuf> {
+    unsafe { process_path(pid) }
 }
 
 /// 실행 중인 창을 모아 활성 표시를 붙인다. 독 자신이 전경이면 직전에 쓰던 창을 활성으로 본다
@@ -522,9 +546,99 @@ unsafe fn collect_running(ours: u64) -> Vec<RunningWindow> {
         LAST_FOREGROUND.load(Ordering::Relaxed)
     };
     for entry in &mut list {
-        entry.active = entry.hwnd == active;
+        // 접힌 창은 "지금 보는 창"이 아니다. 창을 전부 접은 뒤에도 LAST_FOREGROUND가
+        // 마지막 창을 가리키고 있어서, 이걸 빼지 않으면 접힌 그룹이 계속 활성으로
+        // 보이고 작업표시줄처럼 다시 누를 때 펴지지 않고 또 접으려 든다.
+        entry.active = entry.hwnd == active && !entry.minimized;
     }
     list
+}
+
+/// 열거된 창을 최상위 창으로 맞춘다. 이미 닫혔으면 에러.
+fn root_window(hwnd: u64) -> Result<HWND, String> {
+    let target = unsafe { GetAncestor(HWND(hwnd as *mut _), GA_ROOT) };
+    if !unsafe { IsWindow(Some(target)) }.as_bool() {
+        return Err("그 창은 이미 닫혔습니다".into());
+    }
+    Ok(target)
+}
+
+/// 창을 닫는다. WM_CLOSE를 보내는 것이라 저장 확인창은 그 앱이 띄운다 —
+/// 작업표시줄 미리보기의 ✕와 같은 동작이다.
+#[tauri::command]
+pub fn close_window(hwnd: u64) -> Result<(), String> {
+    let target = root_window(hwnd)?;
+    unsafe { PostMessageW(Some(target), WM_CLOSE, WPARAM(0), LPARAM(0)) }
+        .map_err(|e| format!("창을 닫지 못했습니다: {e}"))
+}
+
+/// 창을 앞으로 가져온다. 이미 그 창을 보고 있어도 최소화하지 않는다 —
+/// 메뉴의 "전환"이나 창 목록에서 고를 때는 '그 창으로 가라'는 뜻이기 때문이다.
+/// (레일 막대를 누르는 동작은 focus_window가 맡는다: 그쪽은 작업표시줄처럼 토글한다.)
+#[tauri::command]
+pub fn activate_window(hwnd: u64) -> Result<(), String> {
+    let target = root_window(hwnd)?;
+    unsafe {
+        if IsIconic(target).as_bool() {
+            let _ = ShowWindow(target, SW_RESTORE);
+        }
+        activate(target);
+        if GetForegroundWindow() != target {
+            return Err("창을 앞으로 가져오지 못했습니다".into());
+        }
+    }
+    LAST_FOREGROUND.store(target.0 as u64, Ordering::Relaxed);
+    Ok(())
+}
+
+/// 창을 최소화한다. 복원은 focus_window가 한다.
+#[tauri::command]
+pub fn minimize_window(hwnd: u64) -> Result<(), String> {
+    let target = root_window(hwnd)?;
+    unsafe {
+        let _ = ShowWindow(target, SW_MINIMIZE);
+    }
+    Ok(())
+}
+
+/// 같은 앱의 창 전체를 접는다(작업표시줄에서 그룹 버튼을 눌렀을 때와 같다).
+/// 이미 최소화된 창은 그대로 두고, 닫힌 창은 건너뛴다.
+#[tauri::command]
+pub fn minimize_windows(hwnds: Vec<u64>) -> Result<(), String> {
+    let mut folded = false;
+    for hwnd in hwnds {
+        let target = unsafe { GetAncestor(HWND(hwnd as *mut _), GA_ROOT) };
+        if !unsafe { IsWindow(Some(target)) }.as_bool() || unsafe { IsIconic(target) }.as_bool() {
+            continue;
+        }
+        unsafe {
+            let _ = ShowWindow(target, SW_MINIMIZE);
+        }
+        folded = true;
+    }
+    if folded {
+        Ok(())
+    } else {
+        Err("접을 창이 없습니다".into())
+    }
+}
+
+/// 같은 앱의 창 전체를 되살린다. 최소화된 창을 먼저 모두 복원하고, 마지막에 `focus`
+/// 창을 앞으로 가져온다 — 마지막에 활성화해야 그 창이 맨 위에 남는다.
+#[tauri::command]
+pub fn restore_windows(hwnds: Vec<u64>, focus: u64) -> Result<(), String> {
+    for hwnd in &hwnds {
+        let target = unsafe { GetAncestor(HWND(*hwnd as *mut _), GA_ROOT) };
+        if !unsafe { IsWindow(Some(target)) }.as_bool() {
+            continue;
+        }
+        if unsafe { IsIconic(target) }.as_bool() {
+            unsafe {
+                let _ = ShowWindow(target, SW_RESTORE);
+            }
+        }
+    }
+    activate_window(focus)
 }
 
 /// 독 아이콘을 누르면 그 창으로 점프한다. 이미 쓰고 있던 창이면 최소화 —
@@ -532,10 +646,7 @@ unsafe fn collect_running(ours: u64) -> Vec<RunningWindow> {
 #[tauri::command]
 pub fn focus_window(window: WebviewWindow, hwnd: u64) -> Result<(), String> {
     // 열거된 창이 자식 창일 수 있으니 최상위 창으로 맞춘다.
-    let target = unsafe { GetAncestor(HWND(hwnd as *mut _), GA_ROOT) };
-    if !unsafe { IsWindow(Some(target)) }.as_bool() {
-        return Err("그 창은 이미 닫혔습니다".into());
-    }
+    let target = root_window(hwnd)?;
     let ours = window.hwnd().map(|h| h.0 as u64).unwrap_or(0);
 
     unsafe {
@@ -679,6 +790,201 @@ mod tests {
             let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
         }
         assert_eq!(foreground, hwnd, "창을 앞으로 가져오지 못했습니다");
+    }
+
+    // 미리보기 카드의 창 버튼이 실제로 먹는지 본다. 메모장이 잠깐 떴다 사라진다.
+    // `cargo test --lib -- --ignored preview`로 직접 확인한다.
+    #[test]
+    #[ignore]
+    fn preview_buttons_minimize_and_close_a_window() {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        use windows::core::{PCWSTR, w};
+
+        let wide: Vec<u16> = std::ffi::OsStr::new("notepad.exe")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let opened = unsafe {
+            ShellExecuteW(
+                None,
+                w!("open"),
+                PCWSTR(wide.as_ptr()),
+                PCWSTR::null(),
+                PCWSTR::null(),
+                SW_SHOWNORMAL,
+            )
+        };
+        assert!(opened.0 as isize > 32, "메모장을 실행하지 못했습니다");
+
+        let mut found = None;
+        for _ in 0..30 {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            found = unsafe { collect_running(0) }
+                .into_iter()
+                .find(|w| w.exe.to_lowercase().ends_with("notepad.exe"));
+            if found.is_some() {
+                break;
+            }
+        }
+        let hwnd = found.expect("메모장 창을 찾지 못했습니다").hwnd;
+
+        // 최소화 — 창은 남아 있고 아이콘화 상태여야 한다.
+        minimize_window(hwnd).expect("최소화 실패");
+        let target = HWND(hwnd as *mut _);
+        assert!(unsafe { IsIconic(target) }.as_bool(), "최소화되지 않았습니다");
+
+        // 닫기 — WM_CLOSE를 받고 창이 사라져야 한다.
+        close_window(hwnd).expect("닫기 실패");
+        let mut closed = false;
+        for _ in 0..20 {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            if !unsafe { IsWindow(Some(target)) }.as_bool() {
+                closed = true;
+                break;
+            }
+        }
+        assert!(closed, "창이 닫히지 않았습니다");
+    }
+
+    // 메뉴의 "전환"은 이미 그 창을 보고 있어도 최소화하지 않아야 한다(막대 클릭과 다른 점).
+    // `cargo test --lib -- --ignored menu_activation --nocapture`로 확인한다.
+    #[test]
+    #[ignore]
+    fn menu_activation_keeps_the_window_open() {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        use windows::core::{PCWSTR, w};
+
+        let wide: Vec<u16> = std::ffi::OsStr::new("notepad.exe")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let opened = unsafe {
+            ShellExecuteW(
+                None,
+                w!("open"),
+                PCWSTR(wide.as_ptr()),
+                PCWSTR::null(),
+                PCWSTR::null(),
+                SW_SHOWNORMAL,
+            )
+        };
+        assert!(opened.0 as isize > 32, "메모장을 실행하지 못했습니다");
+
+        let mut found = None;
+        for _ in 0..30 {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            found = unsafe { collect_running(0) }
+                .into_iter()
+                .find(|w| w.exe.to_lowercase().ends_with("notepad.exe"));
+            if found.is_some() {
+                break;
+            }
+        }
+        let hwnd = found.expect("메모장 창을 찾지 못했습니다").hwnd;
+        let target = HWND(hwnd as *mut _);
+
+        activate_window(hwnd).expect("활성화 실패");
+        assert_eq!(
+            unsafe { GetForegroundWindow() },
+            target,
+            "창을 앞으로 가져오지 못했습니다"
+        );
+        // 한 번 더 활성화해도 최소화되지 않는다.
+        activate_window(hwnd).expect("두 번째 활성화 실패");
+        assert!(!unsafe { IsIconic(target) }.as_bool(), "이미 보는 창을 최소화했습니다");
+
+        close_window(hwnd).expect("닫기 실패");
+    }
+
+    // 그룹 접기/펴기가 두 창을 함께 다루는지 본다. 메모장 두 개가 잠깐 떴다 사라진다.
+    // `cargo test --lib -- --ignored group_fold --nocapture`로 확인한다.
+    #[test]
+    #[ignore]
+    fn group_fold_folds_and_restores_every_window() {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        use windows::core::{PCWSTR, w};
+
+        let wide: Vec<u16> = std::ffi::OsStr::new("notepad.exe")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // 메모장 두 개. 창이 둘 모이는지 먼저 확인한다.
+        for _ in 0..2 {
+            let opened = unsafe {
+                ShellExecuteW(
+                    None,
+                    w!("open"),
+                    PCWSTR(wide.as_ptr()),
+                    PCWSTR::null(),
+                    PCWSTR::null(),
+                    SW_SHOWNORMAL,
+                )
+            };
+            assert!(opened.0 as isize > 32, "메모장을 실행하지 못했습니다");
+            std::thread::sleep(std::time::Duration::from_millis(700));
+        }
+
+        let mut hwnds: Vec<u64> = Vec::new();
+        for _ in 0..30 {
+            hwnds = unsafe { collect_running(0) }
+                .into_iter()
+                .filter(|w| w.exe.to_lowercase().ends_with("notepad.exe"))
+                .map(|w| w.hwnd)
+                .collect();
+            if hwnds.len() >= 2 {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        assert!(hwnds.len() >= 2, "메모장 창을 둘 찾지 못했습니다: {}", hwnds.len());
+
+        // 전체 접기 → 둘 다 아이콘화된다.
+        minimize_windows(hwnds.clone()).expect("그룹 접기 실패");
+        for hwnd in &hwnds {
+            let target = unsafe { GetAncestor(HWND(*hwnd as *mut _), GA_ROOT) };
+            assert!(unsafe { IsIconic(target) }.as_bool(), "창이 접히지 않았습니다");
+        }
+
+        // 접힌 창은 "지금 보는 창"으로 남지 않아야 한다. 남으면 레일 알약이 계속 활성으로
+        // 보이고, 두 번째 클릭이 펴기가 아니라 또 접기가 된다.
+        let previous = LAST_FOREGROUND.load(Ordering::Relaxed);
+        LAST_FOREGROUND.store(hwnds[0], Ordering::Relaxed);
+        // 전경을 독으로 넘겨 기억값을 쓰게 만든다(독을 누른 직후와 같은 상황).
+        let foreground = unsafe { GetForegroundWindow() }.0 as u64;
+        let listed = unsafe { collect_running(foreground) };
+        LAST_FOREGROUND.store(previous, Ordering::Relaxed);
+        let still_active: Vec<u64> = listed
+            .iter()
+            .filter(|w| hwnds.contains(&w.hwnd) && w.active)
+            .map(|w| w.hwnd)
+            .collect();
+        assert!(
+            still_active.is_empty(),
+            "접힌 창이 활성으로 남았습니다: {still_active:?}"
+        );
+
+        // 전체 펴기 → 둘 다 복원되고, 지정한 창이 맨 앞에 선다.
+        let focus = hwnds[1];
+        restore_windows(hwnds.clone(), focus).expect("그룹 펴기 실패");
+        for hwnd in &hwnds {
+            let target = unsafe { GetAncestor(HWND(*hwnd as *mut _), GA_ROOT) };
+            assert!(!unsafe { IsIconic(target) }.as_bool(), "창이 복원되지 않았습니다");
+        }
+        assert_eq!(
+            unsafe { GetForegroundWindow() },
+            unsafe { GetAncestor(HWND(focus as *mut _), GA_ROOT) },
+            "지정한 창이 앞에 오지 않았습니다"
+        );
+
+        for hwnd in &hwnds {
+            let _ = close_window(*hwnd);
+        }
     }
 
     #[test]

@@ -48,6 +48,8 @@ export type AppConfig = {
   vertical: Vertical;
   // 접힌 레일의 세로 길이(px). 창이 많으면 이 값보다 길어진다.
   railHeight: number;
+  // 로그온할 때 자동으로 뜰지(마지막으로 성공한 설정). 실제 등록 상태는 getAutostart로 읽는다.
+  autostart: boolean;
 };
 
 export const getConfig = () => invoke<AppConfig>("get_config");export const saveTheme = (theme: Theme) => invoke<void>("set_theme", { theme });
@@ -57,6 +59,11 @@ export const saveVertical = (vertical: Vertical) =>
   invoke<void>("set_vertical", { vertical });
 export const saveRailHeight = (height: number) =>
   invoke<void>("set_rail_height", { height });
+
+// 로그온 자동 시작. OS에 실제로 등록된 상태를 돌려주므로 UI는 이 값을 그대로 쓴다.
+export const getAutostart = () => invoke<boolean>("get_autostart");
+export const saveAutostart = (enabled: boolean) =>
+  invoke<boolean>("set_autostart", { enabled });
 
 // 실패하면 이유가 담긴 문자열로 거부된다(예: 다른 프로그램이 이미 쓰는 키).
 export const saveShortcut = (combo: string) => invoke<void>("set_shortcut", { combo });
@@ -102,6 +109,20 @@ export type SystemStatus = {
 export const getSystemStatus = () => invoke<SystemStatus>("system_status");
 
 export const focusWindow = (hwnd: number) => invoke<void>("focus_window", { hwnd });
+
+// 같은 앱의 창 전체를 접거나 되살린다. 작업표시줄 그룹 버튼과 같은 동작이다.
+// 되살릴 때는 focus 창을 마지막에 올려 그 창이 맨 위에 남는다.
+export const minimizeWindows = (hwnds: number[]) =>
+  invoke<void>("minimize_windows", { hwnds });
+export const restoreWindows = (hwnds: number[], focus: number) =>
+  invoke<void>("restore_windows", { hwnds, focus });
+
+// 메뉴·창 목록에서 "그 창으로 가라"를 뜻한다. 이미 그 창을 보고 있어도 최소화하지 않는다.
+export const activateWindow = (hwnd: number) => invoke<void>("activate_window", { hwnd });
+
+// 미리보기 카드의 창 버튼. 닫기는 WM_CLOSE를 보내므로 저장 확인은 그 앱이 띄운다.
+export const closeWindow = (hwnd: number) => invoke<void>("close_window", { hwnd });
+export const minimizeWindow = (hwnd: number) => invoke<void>("minimize_window", { hwnd });
 
 // 창 하나를 축소 캡처해 data URL(BMP)로 돌려준다. 화면에 가려져 있어도 내용이 나온다.
 export const captureWindow = (hwnd: number, maxWidth = 300) =>
